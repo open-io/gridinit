@@ -383,7 +383,7 @@ _child_start(struct child_s *sd, void *udata, supervisor_cb_f cb)
 	gint argc;
 	gchar **args;
 	struct my_rlimits_s saved_limits;
-	
+
 	if (!sd || !sd->command) {
 		errno = EINVAL;
 		return -1;
@@ -393,7 +393,7 @@ _child_start(struct child_s *sd, void *udata, supervisor_cb_f cb)
 		errno = EINVAL;
 		return -1;
 	}
-	
+
 	bzero(&saved_limits, sizeof(saved_limits));
 
 	sd->last_start_attempt = time(0);
@@ -415,7 +415,7 @@ _child_start(struct child_s *sd, void *udata, supervisor_cb_f cb)
 		if (supervisor_cb_postfork != NULL)
 			supervisor_cb_postfork(supervisor_cb_postfork_udata);
 		reset_sighandler();
-		
+
 		/* change the rights before changing the working directory */
 		if (getuid() == 0) {
 			setgid(sd->gid);
@@ -531,7 +531,7 @@ _child_can_be_restarted(struct child_s *sd)
 		return FALSE;
 
 	/* here : restart allowed */
-	if (!FLAG_HAS(sd,MASK_DELAYED))	
+	if (!FLAG_HAS(sd,MASK_DELAYED))
 		return TRUE;
 
 	/* here : restart delayed if died too early */
@@ -663,7 +663,7 @@ supervisor_children_disable_obsolete(void)
 			count ++;
 		}
 	}
-	
+
 	return count;
 }
 
@@ -683,7 +683,7 @@ supervisor_children_kill_obsolete(void)
 			}
 		}
 	}
-	
+
 	return count;
 }
 
@@ -694,7 +694,7 @@ supervisor_children_catharsis(void *udata, supervisor_cb_f cb)
 	guint count;
 	struct child_s *sd;
 	struct child_info_s ci;
-	
+
 	count = 0;
 	while ((pid_dead = waitpid(-1, NULL, WNOHANG)) > 0) {
 		FOREACH_CHILD(sd) {
@@ -810,7 +810,7 @@ supervisor_children_register(const gchar *key, const gchar *cmd, GError **error)
 	(void) supervisor_limit_get(SUPERV_LIMIT_THREAD_STACK, &(sd->rlimits.stack_size));
 	(void) supervisor_limit_get(SUPERV_LIMIT_MAX_FILES,    &(sd->rlimits.nb_files));
 	(void) supervisor_limit_get(SUPERV_LIMIT_CORE_SIZE,    &(sd->rlimits.core_size));
-	
+
 	/*ring insertion*/
 	sd->next = SRV_BEACON.next;
 	SRV_BEACON.next = sd;
@@ -850,7 +850,7 @@ supervisor_children_kill_disabled(void)
 	FOREACH_CHILD(sd) {
 		/* Stop child that needs to be restarted */
 		if (FLAG_HAS(sd,MASK_RESTART))
-			_child_set_flag(sd, MASK_STARTED, FALSE);	
+			_child_set_flag(sd, MASK_STARTED, FALSE);
 
 		if (!_child_should_be_up(sd)) {
 			if (sd->pid > 0) {
@@ -860,7 +860,7 @@ supervisor_children_kill_disabled(void)
 			}
 		}
 	}
-	
+
 	return count;
 }
 
@@ -943,7 +943,7 @@ supervisor_children_repair_all(void)
 			count ++;
 		}
 	}
-	
+
 	errno = 0;
 	return count;
 }
