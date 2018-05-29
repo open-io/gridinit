@@ -1181,11 +1181,12 @@ _cfg_section_service(GKeyFile *kf, const gchar *section, GError **err)
 	gchar *str_command, *str_enabled, *str_startatboot, *str_ondie,
 		*str_uid, *str_gid,
 		*str_limit_stack, *str_limit_core, *str_limit_fd,
-		*str_wd, *str_group;
+		*str_wd, *str_group, *str_delay_sigkill;
 	gint32 uid, gid;
 
 	uid = gid = -1;
 	str_key = strchr(section, '.') + 1;
+	str_delay_sigkill = __get_and_enlist(&gc, kf, section, CFG_KEY_DELAY_KILL);
 	str_command = __get_and_enlist(&gc, kf, section, "command");
 	str_enabled = __get_and_enlist(&gc, kf, section, "enabled");
 	str_ondie = __get_and_enlist(&gc, kf, section, "on_die");
@@ -1322,6 +1323,11 @@ _cfg_section_service(GKeyFile *kf, const gchar *section, GError **err)
 	if (str_group)
 		supervisor_children_set_group(str_key, str_group);
 
+	if (str_delay_sigkill) {
+		time_t delay = g_ascii_strtoll(str_delay_sigkill, NULL, 10);
+		supervisor_children_set_delay_sigkill(str_key, delay);
+	}
+
 	rc = TRUE;
 
 label_exit:
@@ -1395,6 +1401,7 @@ _cfg_section_default(GKeyFile *kf, const gchar *section, GError **err)
 	gint64 limit_thread_stack = 1024LL * 1024LL;
 	gint64 limit_core_size = -1LL;
 	gint64 limit_nb_files = 8192LL * 1024LL * 1024LL;
+	gint64 delay_sigkill = -1LL;
 	gchar **p_key, **keys;
 
 	keys = g_key_file_get_keys(kf, section, NULL, err);
@@ -1407,10 +1414,13 @@ _cfg_section_default(GKeyFile *kf, const gchar *section, GError **err)
 
 		str = g_key_file_get_string(kf, section, *p_key, NULL);
 
-		if (!g_ascii_strcasecmp(*p_key, CFG_KEY_INHERIT)) {
+		if (!g_ascii_strcasecmp(*p_key, CFG_KEY_DELAY_KILL)) {
+			delay_sigkill = g_ascii_strtoll(str, NULL, 10);
+		}
+		else if (!g_ascii_strcasecmp(*p_key, CFG_KEY_INHERIT)) {
 			inherit_env = g_ascii_strtoll(str, NULL, 10);
 		}
-		if (!g_ascii_strcasecmp(*p_key, CFG_KEY_LIMIT_CORESIZE)) {
+		else if (!g_ascii_strcasecmp(*p_key, CFG_KEY_LIMIT_CORESIZE)) {
 			limit_core_size = g_ascii_strtoll(str, NULL, 10) * 1024LL * 1024LL;
 		}
 		else if (!g_ascii_strcasecmp(*p_key, CFG_KEY_LIMIT_NBFILES)) {
@@ -1505,6 +1515,10 @@ _cfg_section_default(GKeyFile *kf, const gchar *section, GError **err)
 		if (config_subdir)
 			g_free(config_subdir);
 		config_subdir = g_strndup(buf_includes, sizeof(buf_includes));
+	}
+
+	if (delay_sigkill >= 0) {
+		supervisor_default_delay_KILL = delay_sigkill;
 	}
 
 	return TRUE;

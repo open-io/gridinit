@@ -241,6 +241,8 @@ int supervisor_children_get_info(const gchar *key, struct child_info_s *ci);
  */
 int supervisor_children_set_ids(const gchar *key, gint32 uid, gint32 gid);
 
+int supervisor_children_set_delay_sigkill(const char *key, time_t delay);
+
 /* Fork and pipe ----------------------------------------------------------- */
 
 /** 

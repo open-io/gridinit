@@ -20,6 +20,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef  __GRIDINIT_INTERNALS_H__
 # define __GRIDINIT_INTERNALS_H__ 1
 
+#ifndef  CFG_KEY_DELAY_KILL
+# define CFG_KEY_DELAY_KILL "delay_sigkill"
+#endif
+
 # ifndef  GRIDINIT_SOCK_PATH
 #  define GRIDINIT_SOCK_PATH "/var/run/gridinit.sock"
 # endif
