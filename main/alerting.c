@@ -45,38 +45,43 @@ gridinit_alerting_configure(const gchar *path, const gchar *symbol,
 	TRACE("trying to configure the alerting with the module [%s] and the symbol [%s]",
 		path, symbol);
 	if (!symbol || !path) {
-		if (err)
+		if (err) {
 			*err = g_error_printf(LOG_DOMAIN, 500, "Invalid parameter");
-			return FALSE;
+		}
+		return FALSE;
 	}
 	if (module != NULL) {
-		if (err)
+		if (err) {
 			*err = g_error_printf(LOG_DOMAIN, 500, "Module already loaded");
+		}
 		return FALSE;
 	}
 
 	/* Open the module and locate the exported symbol */
 	if (NULL == (module = g_module_open (path, 0))) {
-		if (err)
+		if (err) {
 			*err = g_error_printf(LOG_DOMAIN, 500,
 				"Cannot load the plug-in from file %s (%s)",
 				path, g_module_error());
+		}
 		return FALSE;
 	}
 
 	gpointer pointer = NULL;
 	if (!g_module_symbol(module, symbol, &pointer) || !pointer) {
-		if (err)
+		if (err) {
 			*err = g_error_printf(LOG_DOMAIN, 500,
 				"Cannot get the exported structure (%s) from the plug-in %p (%s)",
 				symbol, (void*)module, g_module_error());
+		}
 		return FALSE;
 	}
 
 	handle = pointer;
-	if (handle->init)
+	if (handle->init) {
 		handle->init(handle->module_data, ht_params);
-	
+	}
+
 	return TRUE;
 }
 
