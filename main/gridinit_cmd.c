@@ -51,15 +51,6 @@ static gboolean flag_color = FALSE;
 
 #define BOOL(i) (i?1:0)
 
-struct dump_status_arg_s {
-	int how;
-	int argc;
-	char **args;
-	guint count_faulty;
-	guint count_all;
-	guint count_misses;
-};
-
 struct dump_as_is_arg_s {
 	guint count_success;
 	guint count_errors;
@@ -92,6 +83,13 @@ struct child_info_s {
 		long nb_files;
 	} rlimits;
 };
+
+static void child_info_free(struct child_info_s *ci) {
+	if (ci->key) g_free(ci->key);
+	if (ci->cmd) g_free(ci->cmd);
+	if (ci->group) g_free(ci->group);
+	g_free(ci);
+}
 
 struct keyword_set_s {
 	const gchar *already;
@@ -290,54 +288,132 @@ dump_as_is(FILE *in_stream, void *udata)
 	fflush(stdout);
 }
 
-static void
-dump_status(FILE *in_stream, void *udata)
+static FILE*
+open_cnx(void)
 {
-	char fmt_title[256], fmt_line[256];
-	size_t maxkey, maxgroup;
-	struct dump_status_arg_s *status_args;
-	GList *all_jobs = NULL, *l;
-	GHashTable *ht_counts;
-
-	gboolean matches(struct child_info_s *ci, int argc, gchar **args) {
-		int i;
-		gchar *s;
-		gpointer p;
-		gboolean rc;
-
-		if (!*args)
-			return TRUE;
-		rc = FALSE;
-		for (i=0; i<argc && (s=args[i]) ;i++) {
-			p = g_hash_table_lookup(ht_counts, s);
-			if (s[0]=='@' && gridinit_group_in_set(s+1, ci->group)) {
-				*((guint32*)p) = *((guint32*)p) + 1;
-				rc = TRUE;
-			}
-			if (s[0]!='@' && !g_ascii_strcasecmp(ci->key, s)) {
-				*((guint32*)p) = *((guint32*)p) + 1;
-				rc = TRUE;
-			}
-		}
-		return rc;
+	int req_fd = -1;
+	if (-1 == (req_fd = __open_unix_client(sock_path))) {
+		g_printerr("Connection to UNIX socket [%s] failed : %s\n", sock_path, strerror(errno));
+		return NULL;
 	}
 
-	status_args = udata;
-	all_jobs = read_services_list(in_stream);
+	FILE *req_stream = NULL;
+	if (NULL == (req_stream = fdopen(req_fd, "a+"))) {
+		g_printerr("Connection to UNIX socket [%s] failed : %s\n", sock_path, strerror(errno));
+		close(req_fd);
+		return NULL;
+	}
 
-	maxkey = get_longest_key(all_jobs);
-	maxgroup = get_longest_group(all_jobs);
+	return req_stream;
+}
 
-	do { /* Prepares a hash of match counters associated to the pattern strings */
-		int i = 0;
-		ht_counts = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
-		for (i = 0; i < status_args->argc ; i++)
-			g_hash_table_insert(ht_counts, g_strdup(status_args->args[i]), g_malloc0(sizeof(guint32)));
-	} while (0);
+static int
+send_commandf(void (*dumper)(FILE *, void *), void *udata, const char *fmt, ...)
+{
+	FILE *req_stream;
+	if (NULL != (req_stream = open_cnx())) {
+		va_list va;
+		va_start(va, fmt);
+		vfprintf(req_stream, fmt, va);
+		va_end(va);
 
-	/* write the title line */
-	switch (status_args->how) {
-	case MINI:
+		fflush(req_stream);
+		dumper(req_stream, udata);
+		fclose(req_stream);
+		return 1;
+	}
+
+	return 0;
+}
+
+static int
+send_commandv(void (*dumper)(FILE *, void*), void *udata, int argc, char **args)
+{
+	FILE *req_stream;
+	if (NULL != (req_stream = open_cnx())) {
+		for (int i=0; i<argc ;i++) {
+			fputs(args[i], req_stream);
+			fputc(' ', req_stream);
+		}
+		fputc('\n', req_stream);
+
+		fflush(req_stream);
+		dumper(req_stream, udata);
+		fclose(req_stream);
+		return 1;
+	}
+
+	return 0;
+}
+
+static GList *
+_fetch_services(void)
+{
+	GList *jobs = NULL;
+	void _on_reply(FILE *in_stream, void *udata) {
+		(void) udata;
+		jobs = read_services_list(in_stream);
+	}
+
+	int rc = send_commandv(_on_reply, NULL, 1, (char*[]){"status",NULL});
+	if (!rc) {
+		g_list_free_full(jobs, (GDestroyNotify)child_info_free);
+		return NULL;
+	} else {
+		return jobs;
+	}
+}
+
+static GList *
+_filter_services(GList *original, char **filters, int *counters)
+{
+	gboolean matches(struct child_info_s *ci) {
+		for (int i=0; filters[i] ;i++) {
+			const char *pattern = filters[i];
+			int *pcounter = counters + i;
+			if (pattern[0]=='@') {
+				if (gridinit_group_in_set(pattern+1, ci->group)) {
+					(*pcounter) ++;
+					return TRUE;
+				}
+			} else {
+				if (!g_ascii_strcasecmp(ci->key, pattern)) {
+					(*pcounter) ++;
+					return TRUE;
+				}
+			}
+		}
+		return FALSE;
+	}
+
+	GList *result = NULL;
+	for (GList *l = original; l ;l = l->next) {
+		if (!filters[0] || matches(l->data)) {
+			result = g_list_append(result, l->data);
+		}
+	}
+	return result;
+}
+
+static int
+command_status(int lvl, int argc, char **args)
+{
+	char fmt_title[256], fmt_line[256];
+
+	int *counters = alloca(sizeof(int) * (argc-1));
+	memset(counters, 0, sizeof(int) * (argc-1));
+
+	GList *all_jobs = _fetch_services();
+	GList *jobs = _filter_services(all_jobs, args+1, counters);
+
+	/* compute the max length of several variable field, for well aligned
+	 * columns on the output. */
+	const size_t maxkey = get_longest_key(jobs);
+	const size_t maxgroup = get_longest_group(jobs);
+
+	/* write the title */
+	switch (lvl) {
+	case 0:
 		g_snprintf(fmt_title, sizeof(fmt_title),
 				"%%-%us %%-8s %%6s %%s\n",
 				(guint)maxkey);
@@ -346,7 +422,7 @@ dump_status(FILE *in_stream, void *udata)
 				(guint)maxkey);
 		fprintf(stdout, fmt_title, "KEY", "STATUS", "PID", "GROUP");
 		break;
-	case MEDIUM:
+	case 1:
 		g_snprintf(fmt_title, sizeof(fmt_title),
 				"%%-%us %%-8s %%5s %%6s %%5s %%19s %%%us %%s\n",
 				(guint)maxkey, (guint)maxgroup);
@@ -369,36 +445,34 @@ dump_status(FILE *in_stream, void *udata)
 		break;
 	}
 
-	/* Dump the list */
-	for (l=all_jobs; l ;l=l->next) {
+	int count_faulty = 0, count_all = 0, count_misses = 0;
+
+	/* iterate on the lines */
+	for (GList *l=jobs; l ;l=l->next) {
 		char str_time[20] = "---------- --------";
 		const char * str_status = "-";
 		struct child_info_s *ci = NULL;
 		gboolean faulty = FALSE;
-		
+
 		ci = l->data;
-		if (status_args->argc && status_args->args) {
-			if (!matches(ci, status_args->argc, status_args->args))
-				continue;
-		}
 
 		/* Prepare some fields */
 		if (ci->pid > 0)
 			strftime(str_time, sizeof(str_time), "%Y-%m-%d %H:%M:%S",
 				gmtime(&(ci->last_start_attempt)));
 		str_status = get_child_status(ci, &faulty);
-		
+
 		/* Manage counters */
-		status_args->count_all ++;
 		if (faulty)
-			status_args->count_faulty ++;
+			count_faulty ++;
+		count_all ++;
 
 		/* Print now! */
-		switch (status_args->how) {
-		case MINI:
+		switch (lvl) {
+		case 0:
 			fprintf(stdout, fmt_line, ci->key, str_status, ci->pid, ci->group);
 			break;
-		case MEDIUM:
+		case 1:
 			fprintf(stdout, fmt_line,
 				ci->key, str_status, ci->pid,
 				ci->counter_started, ci->counter_died,
@@ -415,117 +489,17 @@ dump_status(FILE *in_stream, void *udata)
 	}
 	fflush(stdout);
 
-	/* check that all the input patterns have been used */
-	do {
-		GHashTableIter iter;
-		gpointer k, v;
-		g_hash_table_iter_init(&iter, ht_counts);
-		while (g_hash_table_iter_next(&iter, &k, &v)) {
-			if (!*((guint32*)v)) {
-				g_printerr("# Group/Key [%s] matched no service\n", (gchar*)k);
-				++ status_args->count_misses;
-			}
-		}
-	} while (0);
-
-	/* free anything */
-	g_hash_table_destroy(ht_counts);
-	for (l=all_jobs; l ;l=l->next) {
-		struct child_info_s *ci = l->data;
-		g_free(ci->key);
-		g_free(ci->cmd);
-		g_free(ci->group);
-		g_free(ci);
-		l->data = NULL;
-	}
-	
-	g_list_free(all_jobs);
-	all_jobs = NULL;
-}
-
-static FILE*
-open_cnx(void)
-{
-	int req_fd = -1;
-	FILE *req_stream = NULL;
-	if (-1 == (req_fd = __open_unix_client(sock_path))) {
-		g_printerr("Connection to UNIX socket [%s] failed : %s\n", sock_path, strerror(errno));
-		return NULL;
+	/* If patterns have been specified, we must find items (the user
+	 * expects something to show up */
+	for (int i=0; i<argc-1 ;i++) {
+		if (!counters[i])
+			count_misses ++;
 	}
 
-	if (NULL == (req_stream = fdopen(req_fd, "a+"))) {
-		g_printerr("Connection to UNIX socket [%s] failed : %s\n", sock_path, strerror(errno));
-		close(req_fd);
-		return NULL;
-	}
+	g_list_free_full(all_jobs, (GDestroyNotify)child_info_free);
+	g_list_free(jobs);
 
-	return req_stream;
-}
-
-static int
-send_commandf(void (*dumper)(FILE *, void *), void *udata, const char *fmt, ...)
-{
-	va_list va;
-	FILE *req_stream;
-	
-	if (NULL != (req_stream = open_cnx())) {
-
-		va_start(va, fmt);
-		vfprintf(req_stream, fmt, va);
-		va_end(va);
-
-		fflush(req_stream);
-		dumper(req_stream, udata);
-		fclose(req_stream);
-		return 1;
-	}
-
-	return 0;
-}
-
-static int
-send_commandv(void (*dumper)(FILE *, void*), void *udata, int argc, char **args)
-{
-	int i;
-	FILE *req_stream;
-	
-	if (NULL != (req_stream = open_cnx())) {
-		for (i=0; i<argc ;i++) {
-			fputs(args[i], req_stream);
-			fputc(' ', req_stream);
-		}
-		fputc('\n', req_stream);
-
-		fflush(req_stream);
-		dumper(req_stream, udata);
-		fclose(req_stream);
-		return 1;
-	}
-
-	return 0;
-}
-
-static int
-command_status(int lvl, int argc, char **args)
-{
-	int rc;
-	struct dump_status_arg_s status_args;
-	gchar *real_args[] = {"status",NULL};
-
-	bzero(&status_args, sizeof(status_args));
-	switch (lvl) {
-		case 0:  status_args.how = MINI; break;
-		case 1:  status_args.how = MEDIUM; break;
-		default: status_args.how = MEDIUM+1; break;
-	}
-	status_args.argc = argc-1;
-	status_args.args = args+1;
-
-	rc = send_commandv(dump_status, &status_args, 1, real_args);
-	return !rc
-		|| status_args.count_faulty != 0
-		|| status_args.count_misses != 0
-		|| (status_args.argc > 0 && status_args.count_all == 0);
+	return !(!count_misses && !count_faulty && (!argc || count_all > 0));
 }
 
 static int
@@ -549,11 +523,8 @@ command_status2(int argc, char **args)
 static int
 command_start(int argc, char **args)
 {
-	int rc;
-	struct dump_as_is_arg_s dump_args;
-
-	bzero(&dump_args, sizeof(dump_args));
-	rc = send_commandv(dump_as_is, &dump_args, argc, args);
+	struct dump_as_is_arg_s dump_args = {};
+	int rc = send_commandv(dump_as_is, &dump_args, argc, args);
 	return !rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
@@ -562,11 +533,8 @@ command_start(int argc, char **args)
 static int
 command_stop(int argc, char **args)
 {
-	int rc;
-	struct dump_as_is_arg_s dump_args;
-
-	bzero(&dump_args, sizeof(dump_args));
-	rc = send_commandv(dump_as_is, &dump_args, argc, args);
+	struct dump_as_is_arg_s dump_args = {};
+	int rc = send_commandv(dump_as_is, &dump_args, argc, args);
 	return !rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
@@ -575,11 +543,8 @@ command_stop(int argc, char **args)
 static int
 command_restart(int argc, char **args)
 {
-	int rc;
-	struct dump_as_is_arg_s dump_args;
-
-	bzero(&dump_args, sizeof(dump_args));
-	rc = send_commandv(dump_as_is, &dump_args, argc, args);
+	struct dump_as_is_arg_s dump_args = {};
+	int rc = send_commandv(dump_as_is, &dump_args, argc, args);
 	return !rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
@@ -588,11 +553,8 @@ command_restart(int argc, char **args)
 static int
 command_repair(int argc, char **args)
 {
-	int rc;
-	struct dump_as_is_arg_s dump_args;
-
-	bzero(&dump_args, sizeof(dump_args));
-	rc = send_commandv(dump_as_is, &dump_args, argc, args);
+	struct dump_as_is_arg_s dump_args = {};
+	int rc = send_commandv(dump_as_is, &dump_args, argc, args);
 	return !rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
@@ -601,13 +563,9 @@ command_repair(int argc, char **args)
 static int
 command_reload(int argc, char **args)
 {
-	int rc;
-	struct dump_as_is_arg_s dump_args;
-
-	(void) argc;
-	(void) args;
-	bzero(&dump_args, sizeof(dump_args));
-	rc = send_commandf(dump_as_is, &dump_args, "reload\n");
+	struct dump_as_is_arg_s dump_args = {};
+	(void) argc, (void) args;
+	int rc = send_commandf(dump_as_is, &dump_args, "reload\n");
 	return !rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
@@ -634,7 +592,7 @@ main_options(int argc, char **args)
 	int opt;
 
 	g_strlcpy(sock_path, GRIDINIT_SOCK_PATH, sizeof(sock_path));
-	
+
 	while ((opt = getopt(argc, args, "chS:")) != -1) {
 		switch (opt) {
 			case 'c':
@@ -683,7 +641,7 @@ main(int argc, char ** args)
 {
 	struct command_s *cmd;
 	int opt_index;
-	
+
 	close(0);
 	opt_index = main_options(argc, args);
 
@@ -691,7 +649,7 @@ main(int argc, char ** args)
 		help(args);
 	if (opt_index >= argc)
 		help(args);
-	
+
 	for (cmd=COMMANDS; cmd->name ;cmd++) {
 		if (0 == g_ascii_strcasecmp(cmd->name, args[opt_index])) {
 			int rc = cmd->action(argc-opt_index, args+opt_index);
