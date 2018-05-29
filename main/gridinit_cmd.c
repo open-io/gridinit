@@ -56,11 +56,6 @@ struct dump_as_is_arg_s {
 	guint count_errors;
 };
 
-struct command_s {
-	const gchar *name;
-	int (*action) (int argc, char **args);
-};
-
 struct child_info_s {
 	char *key;
 	char *group;
@@ -308,29 +303,12 @@ open_cnx(void)
 }
 
 static int
-send_commandf(void (*dumper)(FILE *, void *), void *udata, const char *fmt, ...)
+send_commandv(void (*dumper)(FILE *, void*), void *udata, const char *cmd, int argc, char **args)
 {
 	FILE *req_stream;
 	if (NULL != (req_stream = open_cnx())) {
-		va_list va;
-		va_start(va, fmt);
-		vfprintf(req_stream, fmt, va);
-		va_end(va);
-
-		fflush(req_stream);
-		dumper(req_stream, udata);
-		fclose(req_stream);
-		return 1;
-	}
-
-	return 0;
-}
-
-static int
-send_commandv(void (*dumper)(FILE *, void*), void *udata, int argc, char **args)
-{
-	FILE *req_stream;
-	if (NULL != (req_stream = open_cnx())) {
+		fputs(cmd, req_stream);
+		fputc(' ', req_stream);
 		for (int i=0; i<argc ;i++) {
 			fputs(args[i], req_stream);
 			fputc(' ', req_stream);
@@ -355,7 +333,7 @@ _fetch_services(void)
 		jobs = read_services_list(in_stream);
 	}
 
-	int rc = send_commandv(_on_reply, NULL, 1, (char*[]){"status",NULL});
+	int rc = send_commandv(_on_reply, NULL, "status", 0, (char*[]){NULL});
 	if (!rc) {
 		g_list_free_full(jobs, (GDestroyNotify)child_info_free);
 		return NULL;
@@ -370,15 +348,14 @@ _filter_services(GList *original, char **filters, int *counters)
 	gboolean matches(struct child_info_s *ci) {
 		for (int i=0; filters[i] ;i++) {
 			const char *pattern = filters[i];
-			int *pcounter = counters + i;
 			if (pattern[0]=='@') {
 				if (gridinit_group_in_set(pattern+1, ci->group)) {
-					(*pcounter) ++;
+					if (counters) counters[i] ++;
 					return TRUE;
 				}
 			} else {
 				if (!g_ascii_strcasecmp(ci->key, pattern)) {
-					(*pcounter) ++;
+					if (counters) counters[i] ++;
 					return TRUE;
 				}
 			}
@@ -400,11 +377,11 @@ command_status(int lvl, int argc, char **args)
 {
 	char fmt_title[256], fmt_line[256];
 
-	int *counters = alloca(sizeof(int) * (argc-1));
-	memset(counters, 0, sizeof(int) * (argc-1));
+	int *counters = alloca(sizeof(int) * (argc+1));
+	memset(counters, 0, sizeof(int) * (argc+1));
 
 	GList *all_jobs = _fetch_services();
-	GList *jobs = _filter_services(all_jobs, args+1, counters);
+	GList *jobs = _filter_services(all_jobs, args, counters);
 
 	/* compute the max length of several variable field, for well aligned
 	 * columns on the output. */
@@ -491,7 +468,7 @@ command_status(int lvl, int argc, char **args)
 
 	/* If patterns have been specified, we must find items (the user
 	 * expects something to show up */
-	for (int i=0; i<argc-1 ;i++) {
+	for (int i=0; i<argc ;i++) {
 		if (!counters[i])
 			count_misses ++;
 	}
@@ -524,7 +501,17 @@ static int
 command_start(int argc, char **args)
 {
 	struct dump_as_is_arg_s dump_args = {};
-	int rc = send_commandv(dump_as_is, &dump_args, argc, args);
+	int rc = send_commandv(dump_as_is, &dump_args, "start", argc, args);
+	return !rc
+		|| dump_args.count_errors != 0
+		|| dump_args.count_success == 0;
+}
+
+static int
+command_kill(int argc, char **args)
+{
+	struct dump_as_is_arg_s dump_args = {};
+	int rc = send_commandv(dump_as_is, &dump_args, "stop", argc, args);
 	return !rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
@@ -533,18 +520,35 @@ command_start(int argc, char **args)
 static int
 command_stop(int argc, char **args)
 {
-	struct dump_as_is_arg_s dump_args = {};
-	int rc = send_commandv(dump_as_is, &dump_args, argc, args);
-	return !rc
-		|| dump_args.count_errors != 0
-		|| dump_args.count_success == 0;
+	gboolean _all_down(void) {
+		gboolean rc = TRUE;
+		GList *all_jobs = _fetch_services();
+		GList *jobs = _filter_services(all_jobs, args, NULL);
+		for (GList *l = jobs; l ;l=l->next) {
+			struct child_info_s *ci = l->data;
+			if (ci->pid > 0)
+				rc = FALSE;
+		}
+		g_list_free_full(all_jobs, (GDestroyNotify)child_info_free);
+		g_list_free(jobs);
+		return rc;
+	}
+
+	while (!_all_down()) {
+		g_print("# Stopping...\n");
+		int rc = command_kill(argc, args);
+		if (rc != 0)
+			return rc;
+		g_usleep(G_TIME_SPAN_SECOND);
+	}
+	return 0;
 }
 
 static int
 command_restart(int argc, char **args)
 {
 	struct dump_as_is_arg_s dump_args = {};
-	int rc = send_commandv(dump_as_is, &dump_args, argc, args);
+	int rc = send_commandv(dump_as_is, &dump_args, "restart", argc, args);
 	return !rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
@@ -554,7 +558,7 @@ static int
 command_repair(int argc, char **args)
 {
 	struct dump_as_is_arg_s dump_args = {};
-	int rc = send_commandv(dump_as_is, &dump_args, argc, args);
+	int rc = send_commandv(dump_as_is, &dump_args, "repair", argc, args);
 	return !rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
@@ -565,7 +569,7 @@ command_reload(int argc, char **args)
 {
 	struct dump_as_is_arg_s dump_args = {};
 	(void) argc, (void) args;
-	int rc = send_commandf(dump_as_is, &dump_args, "reload\n");
+	int rc = send_commandv(dump_as_is, &dump_args, "reload", 0, (char*[]){NULL});
 	return !rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
@@ -574,13 +578,17 @@ command_reload(int argc, char **args)
 
 /* ------------------------------------------------------------------------- */
 
-static struct command_s COMMANDS[] = {
-	{ "status",   command_status0 },
-	{ "status2",  command_status1 },
-	{ "status3",  command_status2 },
-	{ "start",    command_start  },
-	{ "stop",     command_stop   },
-	{ "restart",  command_restart },
+struct command_s {
+	const gchar *name;
+	int (*action) (int argc, char **args);
+} COMMANDS[] = {
+	{ "status",  command_status0 },
+	{ "status2", command_status1 },
+	{ "status3", command_status2 },
+	{ "start",   command_start },
+	{ "stop",    command_stop },
+	{ "kill",    command_kill },
+	{ "restart", command_restart },
 	{ "reload",  command_reload },
 	{ "repair",  command_repair },
 	{ NULL, NULL }
@@ -652,7 +660,7 @@ main(int argc, char ** args)
 
 	for (cmd=COMMANDS; cmd->name ;cmd++) {
 		if (0 == g_ascii_strcasecmp(cmd->name, args[opt_index])) {
-			int rc = cmd->action(argc-opt_index, args+opt_index);
+			int rc = cmd->action(argc-(opt_index+1), args+(opt_index+1));
 			close(1);
 			close(2);
 			return rc;
