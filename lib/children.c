@@ -1164,6 +1164,22 @@ supervisor_children_set_ids(const gchar *key, gint32 uid, gint32 gid)
 	return 0;
 }
 
+int
+supervisor_children_set_delay_sigkill(const char *key, time_t delay)
+{
+	if (!key) {
+		errno = EINVAL;
+		return -1;
+	}
+	struct child_s *sd;
+	if (!(sd = supervisor_get_child(key))) {
+		errno = ENOENT;
+		return -1;
+	}
+	sd->delay_before_KILL = delay;
+	return 0;
+}
+
 void
 supervisor_set_callback_postfork(supervisor_postfork_f *cb, void *udata)
 {
