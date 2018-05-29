@@ -75,19 +75,12 @@ typedef void (supervisor_cb_f) (void *udata, struct child_info_s *ci);
 
 void supervisor_children_init(void);
 
-/**
- * Sets an optional function that will be used just after the fork
- */
+/* Sets an optional function that will be used just after the fork */
 void supervisor_set_callback_postfork(supervisor_postfork_f *cb, void *udata);
 
 void supervisor_children_fini(void);
 
 guint supervisor_children_cleanall(void);
-
-/**
- * @deprecated use supervisor_children_kill() instead
- */
-guint supervisor_children_startall(void *udata, supervisor_cb_f cb);
 
 void supervisor_children_stopall(guint max_retries);
 
@@ -97,201 +90,87 @@ guint supervisor_children_catharsis(void *udata, supervisor_cb_f cb);
 
 gboolean supervisor_children_register(const gchar *key, const gchar *cmd);
 
-/**
- * Marks the services still obsolete as DISABLED and to be stopped.
- * Services still carry the OBSOLETE flag after this step.
- */
+/* Marks the services still obsolete as DISABLED and to be stopped.
+   Services still carry the OBSOLETE flag after this step. */
 guint supervisor_children_disable_obsolete(void);
 
-/**
- * @deprecated will be deleted soon, please use supervisor_children_disable_obsolete() then supervisor_children_kill_disabled()
- */
-guint supervisor_children_kill_obsolete(void);
-
-/**
- * Mark all the services as obsolete.
- * This is used when reloading a configuration.
- */
+/* Mark all the services as obsolete. This is used when reloading a config. */
 guint supervisor_children_mark_obsolete(void);
 
-/**
- * Stops the UP services that are in state that does not allow them to run.
- *
- * This includes services DOWN, BROKEN, STOPPED, DISABLED.
- * Will send SIGKILL until expiration, then SIGTERM.
- */
+/* Stops the UP services that are in state that does not allow them to run.
+   This includes services DOWN, BROKEN, STOPPED, DISABLED.
+   Will send SIGKILL until expiration, then SIGTERM. */
 guint supervisor_children_kill_disabled(void);
 
-/**
- * starts allt the stopped services in a state proper to be restarted
- */
+/* starts allt the stopped services in a state proper to be restarted */
 guint supervisor_children_start_enabled(void *udata, supervisor_cb_f cb);
 
-/**
- * Sets the 'enabled' flag on the service
- */
+/* Sets the 'enabled' flag on the service */
 int supervisor_children_enable(const char *key, gboolean enable);
 
-/**
- * Sets the 'autorespawn' flag on this service
- */
+/* Sets the 'autorespawn' flag on this service */
 int supervisor_children_set_respawn(const char *key, gboolean enabled);
 
-/**
- * Marks the service to be started or stopped.
- */
+/* Marks the service to be started or stopped.  */
 int supervisor_children_status(const char *key, gboolean to_be_started);
 
-/**
- * Starts a service that died too often
- */
+/* Starts a service that died too often */
 int supervisor_children_repair(const char *key);
 
-/**
- * Sets/Disable the "delayed restart" behavior for a process
- */
+/* Sets/Disable the "delayed restart" behavior for a process */
 int supervisor_children_set_delay(const char *key, gboolean enabled);
 
-/**
- * Calls supervisor_children_repair() on each broken service
- */
+/* Calls supervisor_children_repair() on each broken service */
 int supervisor_children_repair_all(void);
 
-/**
- * Restart a service
- */
+/* Restart a service */
 int supervisor_children_restart(const char *key);
 
-/**
- *
- */
 int supervisor_children_set_limit(const gchar *key,
 		enum supervisor_limit_e what, gint64 value);
 
-/**
- * Runs the children list and call the callback fnction on each
- * element
- */
+/* Runs the children list and call the callback fnction on each element */
 gboolean supervisor_run_services(void *ptr, supervisor_cb_f callback);
 
-/**
- *
- * @param key
- * @param dir
- * @return
- */
 int supervisor_children_set_working_directory(const gchar *key,
 		const gchar *dir);
 
-/**
- * 
- * @param key
- * @param envkey
- * @param envval
- * @param separator if not 0, keep the previous value and prepends the new value
- * @return
- */
 int supervisor_children_setenv(const gchar *key, const gchar *envkey,
 	const gchar *envval, gchar separator);
 
 void supervisor_children_inherit_env(const gchar *key);
 
-/**
- *
- * @param key
- * @return
- */
 int supervisor_children_clearenv(const gchar *key);
 
-/**
- * @param key
- * @param flags
- * @return
- */
 int supervisor_children_set_user_flags(const gchar *key, guint32 flags);
 
-/**
- * @param key
- * @param flags
- * @return
- */
 int supervisor_children_del_user_flags(const gchar *key, guint32 flags);
 
-/**
- * @param key
- * @param group NULL to clear the group
- * @return
- */
 int supervisor_children_set_group(const gchar *key, const gchar *group);
 
-/**
- *
- * @param key
- * @param ci
- * @return
- */
 int supervisor_children_get_info(const gchar *key, struct child_info_s *ci);
 
-/**
- *
- * @param key
- * @param uid
- * @param gid
- * @return
- */
 int supervisor_children_set_ids(const gchar *key, gint32 uid, gint32 gid);
 
 int supervisor_children_set_delay_sigkill(const char *key, time_t delay);
 
 /* Fork and pipe ----------------------------------------------------------- */
 
-/** 
- *
- * @param str_cmd
- * @return
- */
 int command_get_pipe(const gchar *str_cmd);
 
 /* Privileges -------------------------------------------------------------- */
 
-/**
- *
- * @param user_name
- * @param group_name
- * @param error
- * @return
- */
 gboolean supervisor_rights_init(const char *user_name, const char *group_name,
 		GError ** error);
 
-/**
- *
- * @return
- */
 int supervisor_rights_gain(void);
 
-/**
- *
- * @return
- */
 int supervisor_rights_lose(void);
 
 /* Processus limits */
 
-/**
- *
- * @param what
- * @param value
- * @return
- */
 int supervisor_limit_set(enum supervisor_limit_e what, gint64 value);
 
-/**
- *
- * @param what
- * @param value
- * @return
- */
 int supervisor_limit_get(enum supervisor_limit_e what, gint64 *value);
 
 #endif

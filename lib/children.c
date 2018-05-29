@@ -629,12 +629,6 @@ supervisor_children_start_enabled(void *udata, supervisor_cb_f cb)
 }
 
 guint
-supervisor_children_startall(void *udata, supervisor_cb_f cb)
-{
-	return supervisor_children_start_enabled(udata, cb);
-}
-
-guint
 supervisor_children_mark_obsolete(void)
 {
 	guint count;
@@ -660,26 +654,6 @@ supervisor_children_disable_obsolete(void)
 		if (FLAG_HAS(sd,MASK_OBSOLETE)) {
 			FLAG_SET(sd, MASK_DISABLED);
 			count ++;
-		}
-	}
-
-	return count;
-}
-
-guint
-supervisor_children_kill_obsolete(void)
-{
-	guint count;
-	struct child_s *sd;
-
-	count = 0U;
-
-	FOREACH_CHILD(sd) {
-		if (FLAG_HAS(sd,MASK_OBSOLETE)) {
-			if (sd->pid > 0) {
-				_child_stop(sd);
-				count ++;
-			}
 		}
 	}
 
