@@ -97,7 +97,6 @@ static volatile int flag_help = 0;
 static volatile int flag_quiet = 0;
 static volatile int flag_daemon = 0;
 static volatile int flag_running = ~0;
-static volatile int flag_cfg_reload = 0;
 static volatile int flag_check_socket = 0;
 static volatile int flag_more_verbose = 0;
 
