@@ -54,9 +54,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "./gridinit_alerts.h"
 #include "../lib/gridinit-internals.h"
 
-#define USERFLAG_ONDIE_EXIT                                          0x00000001
-#define USERFLAG_PROCESS_DIED                                        0x00000002
-#define USERFLAG_PROCESS_RESTARTED				     0x00000004
+#define USERFLAG_ONDIE_EXIT        0x00000001
+#define USERFLAG_PROCESS_DIED      0x00000002
+#define USERFLAG_PROCESS_RESTARTED 0x00000004
 
 #define BOOL(i) ((i)!=0)
 
@@ -1227,7 +1227,7 @@ _cfg_section_service(GKeyFile *kf, const gchar *section, GError **err)
 	 * being reloaded. */
 	already_exists = _service_exists(str_key);
 
-	if (!supervisor_children_register(str_key, str_command, err))
+	if (!supervisor_children_register(str_key, str_command))
 		goto label_exit;
 
 	/* Enables or not. This is a lock controlled by the configuration

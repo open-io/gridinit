@@ -32,6 +32,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 # include <sys/types.h>
 # include <unistd.h>
 
+extern time_t supervisor_default_delay_KILL;
+
 /* Children monitoring ----------------------------------------------------- */
 
 enum supervisor_limit_e {
@@ -93,8 +95,7 @@ guint supervisor_children_killall(int sig);
 
 guint supervisor_children_catharsis(void *udata, supervisor_cb_f cb);
 
-gboolean supervisor_children_register(const gchar *key, const gchar *cmd,
-		GError **error);
+gboolean supervisor_children_register(const gchar *key, const gchar *cmd);
 
 /**
  * Marks the services still obsolete as DISABLED and to be stopped.

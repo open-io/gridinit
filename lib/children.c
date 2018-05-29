@@ -35,6 +35,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "./gridinit-utils.h"
 #include "./gridinit-internals.h"
 
+time_t supervisor_default_delay_KILL = SUPERVISOR_DEFAULT_TIMEOUT_KILL;
+
 static time_t _monotonic_seconds(void) {
     return g_get_monotonic_time() / G_TIME_SPAN_SECOND;
 }
@@ -94,6 +96,7 @@ struct my_rlimits_s {
 
 struct child_s {
 	struct child_s *next;
+	time_t delay_before_KILL;
 	gchar *command;
 	pid_t pid;
 	uid_t uid;
@@ -102,9 +105,6 @@ struct child_s {
 	guint8 flags; /* internal use only */
 	guint32 user_flags;
 	GSList *env;
-
-	gchar key[SUPERVISOR_LIMIT_CHILDKEYSIZE];
-	gchar group[2048];
 
 	/* Useful stats */
 	guint counter_started;
@@ -122,16 +122,12 @@ struct child_s {
 
 	/* Child's startup properties */
 	struct my_rlimits_s rlimits;
+
+	gchar key[SUPERVISOR_LIMIT_CHILDKEYSIZE];
+	gchar group[2048];
 };
 
-static struct child_s SRV_BEACON = {
-	NULL, NULL, 0, 0, 0,
-	NULL, 0, 0, NULL,
-	"", "",     /* keys */
-	0, 0, 0, 0, 0, /* birth/death stats */
-	{0,0,0,0,0} /* deaths */,
-	{0,0,0}     /* limits */
-};
+static struct child_s SRV_BEACON = {};
 
 static supervisor_postfork_f *supervisor_cb_postfork = NULL;
 static void *supervisor_cb_postfork_udata = NULL;
@@ -465,11 +461,12 @@ _child_stop(struct child_s *sd)
 		time_t now = _monotonic_seconds();
 		if (sd->first_kill_attempt == 0)
 			sd->first_kill_attempt = now;
-		if (sd->first_kill_attempt > 0 && (now - sd->first_kill_attempt > SUPERVISOR_DEFAULT_TIMEOUT_KILL)) {
+		if (sd->delay_before_KILL > 0
+                && sd->first_kill_attempt > 0
+                && (now - sd->first_kill_attempt) > sd->delay_before_KILL) {
 			DEBUG("Service [%s] did not exit after 60s, sending SIGKILL", sd->key);
 			kill(sd->pid, SIGKILL);
-		}
-		else {
+		} else {
 			DEBUG("Sending SIGTERM to service [%s] pid %i", sd->key, sd->pid);
 			kill(sd->pid, SIGTERM);
 		}
@@ -770,13 +767,11 @@ supervisor_children_fini(void)
 
 
 gboolean
-supervisor_children_register(const gchar *key, const gchar *cmd, GError **error)
+supervisor_children_register(const gchar *key, const gchar *cmd)
 {
 	struct child_s *sd = NULL;
 
-	(void) error;
-
-	/*check if the service is present*/
+	/* check if the service is present */
 	FOREACH_CHILD(sd) {
 		if (0 == g_ascii_strcasecmp(sd->key, key)) {
 
@@ -790,7 +785,7 @@ supervisor_children_register(const gchar *key, const gchar *cmd, GError **error)
 		}
 	}
 
-	/*Child not found, it will be created*/
+	/* Child not found, it will be created */
 	sd = g_try_malloc0(sizeof(struct child_s));
 	if (NULL == sd) {
 		errno = ENOMEM;
@@ -798,6 +793,7 @@ supervisor_children_register(const gchar *key, const gchar *cmd, GError **error)
 	}
 
 	g_strlcpy(sd->key, key, sizeof(sd->key)-1);
+    sd->delay_before_KILL = supervisor_default_delay_KILL;
 	sd->flags = MASK_STARTED|MASK_RESPAWN|MASK_DELAYED;
 	sd->working_directory = g_get_current_dir();
 	sd->command = g_strdup(cmd);
@@ -813,7 +809,7 @@ supervisor_children_register(const gchar *key, const gchar *cmd, GError **error)
 	(void) supervisor_limit_get(SUPERV_LIMIT_MAX_FILES,    &(sd->rlimits.nb_files));
 	(void) supervisor_limit_get(SUPERV_LIMIT_CORE_SIZE,    &(sd->rlimits.core_size));
 
-	/*ring insertion*/
+	/* ring insertion */
 	sd->next = SRV_BEACON.next;
 	SRV_BEACON.next = sd;
 
