@@ -1590,13 +1590,13 @@ _cfg_reload(gboolean services_only, GError **err)
 			return 0;
 		}
 		int glob_rc;
-		glob_t subfiles_glob;
-
-		bzero(&subfiles_glob, sizeof(subfiles_glob));
+		glob_t subfiles_glob = {};
 
 		DEBUG("Loading services files matching [%s]", config_subdir);
 
-		glob_rc = glob(config_subdir, GLOB_NOSORT|GLOB_MARK, notify_error, &subfiles_glob);
+		glob_rc = glob(config_subdir,
+				GLOB_BRACE|GLOB_NOSORT|GLOB_MARK,
+				notify_error, &subfiles_glob);
 		if (glob_rc != 0) {
 			if (glob_rc == GLOB_NOMATCH)
 				NOTICE("Service file pattern matched no file!");
