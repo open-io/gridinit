@@ -35,6 +35,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "./gridinit-utils.h"
 #include "./gridinit-internals.h"
 
+static time_t _monotonic_seconds(void) {
+    return g_get_monotonic_time() / G_TIME_SPAN_SECOND;
+}
+
 /**
  * Temporary flag used by gridinit to mark services during a refresh.
  */
@@ -396,7 +400,7 @@ _child_start(struct child_s *sd, void *udata, supervisor_cb_f cb)
 
 	bzero(&saved_limits, sizeof(saved_limits));
 
-	sd->last_start_attempt = time(0);
+	sd->last_start_attempt = _monotonic_seconds();
 
 	_child_set_rlimits(&(sd->rlimits), &saved_limits);
 	sd->pid = fork();
@@ -458,7 +462,7 @@ static void
 _child_stop(struct child_s *sd)
 {
 	if (sd->pid > 0) {
-		time_t now = time(0);
+		time_t now = _monotonic_seconds();
 		if (sd->first_kill_attempt == 0)
 			sd->first_kill_attempt = now;
 		if (sd->first_kill_attempt > 0 && (now - sd->first_kill_attempt > SUPERVISOR_DEFAULT_TIMEOUT_KILL)) {
@@ -484,7 +488,7 @@ _child_notify_death(struct child_s *sd)
 	sd->deaths.t3 = sd->deaths.t2;
 	sd->deaths.t2 = sd->deaths.t1;
 	sd->deaths.t1 = sd->deaths.t0;
-	sd->deaths.t0 = time(0);
+	sd->deaths.t0 = _monotonic_seconds();
 
 	if (FLAG_HAS(sd, MASK_NEVER_BROKEN))
 		return;
@@ -505,7 +509,7 @@ _child_should_be_up(struct child_s *sd)
 static void
 _child_debug(struct child_s *sd, const gchar *tag)
 {
-	time_t now = time(0);
+	time_t now = _monotonic_seconds();
 	DEBUG("%s [%s] flags=%04X now=%ld deaths{%ld,%ld,%ld,%ld,%ld}",
 		tag, sd->key, sd->flags, now,
 		now - sd->deaths.t0,
@@ -518,12 +522,10 @@ _child_debug(struct child_s *sd, const gchar *tag)
 static gboolean
 _child_can_be_restarted(struct child_s *sd)
 {
-	time_t now;
-
 	if (!_child_should_be_up(sd))
 		return FALSE;
 
- 	if (!sd->last_start_attempt)
+	if (!sd->last_start_attempt)
 		return TRUE;
 
 	/* here : already been started */
@@ -535,7 +537,7 @@ _child_can_be_restarted(struct child_s *sd)
 		return TRUE;
 
 	/* here : restart delayed if died too early */
-	now = time(0);
+	time_t now = _monotonic_seconds();
 
 	_child_debug(sd, "DEAD");
 

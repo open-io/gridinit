@@ -25,7 +25,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
-#include <sys/time.h>
 #include <unistd.h>
 
 #include <glib.h>
