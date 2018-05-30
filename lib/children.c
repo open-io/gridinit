@@ -318,7 +318,7 @@ my_clear_env(void)
 }
 
 /**
- * Must be called after the fork, from the child, just befoe the execve
+ * Must be called after the fork, from the child, just before the execve
  */
 static char **
 _child_build_env(struct child_s *sd)
@@ -332,7 +332,7 @@ _child_build_env(struct child_s *sd)
 
 	new_env = calloc(1 + g_slist_length(sd->env), sizeof(char*));
 
-	/* Run the configured environement */
+	/* Run the configured environment */
 	for (i=0, l=sd->env; l && l->next ;l=l->next->next) {
 		k = l->data;
 		v = l->next->data;
@@ -409,13 +409,13 @@ _child_start(struct child_s *sd, void *udata, supervisor_cb_f cb)
 
 	switch (sd->pid) {
 
-	case -1: /*error*/
+	case -1: /* error */
 		errsav = errno;
 		g_strfreev(args);
 		errno = errsav;
 		return -1;
 
-	case 0: /*child*/
+	case 0: /* child */
 		setsid();
 		sd->pid = getpid();
 		if (supervisor_cb_postfork != NULL)
@@ -432,9 +432,9 @@ _child_start(struct child_s *sd, void *udata, supervisor_cb_f cb)
 
 		_child_exec(sd, argc, args);
 		exit(-1);
-		return 0;/*makes everybody happy*/
+		return 0; /* makes everybody happy */
 
-	default: /*father*/
+	default: /* father */
 
 		INFO("Starting service [%s] with pid %i", sd->key, sd->pid);
 
@@ -867,7 +867,7 @@ supervisor_children_enable(const char *key, gboolean enable)
 		_child_set_flag(sd, MASK_BROKEN, FALSE);
 
 		/* We reset the 'last_start_attempt' field. This is necessary
-		 * to explicitely restart services confiured with the 'cry'
+		 * to explicitely restart services configured with the 'cry'
 		 * or 'exit' value for their 'on_die' parameter */
 		sd->last_start_attempt = 0;
 	}
