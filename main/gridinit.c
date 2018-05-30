@@ -1010,29 +1010,22 @@ _make_empty_env (void)
 static GHashTable*
 _cfg_extract_parameters (GKeyFile *kf, const char *s, const char *p, GError **err)
 {
-	gchar **all_keys=NULL, **current_key=NULL;
 	gsize size=0;
+	gchar **all_keys = g_key_file_get_keys (kf, s, &size, err);
+	if (!all_keys)
+		return NULL;
 
 	GHashTable *ht = _make_empty_env ();
-
-	all_keys = g_key_file_get_keys (kf, s, &size, err);
-	if (!all_keys)
-		goto error;
-	for (current_key=all_keys; current_key && *current_key ;current_key++) {
-		if (g_str_has_prefix(*current_key, p)) {
-			gchar *value = g_key_file_get_value (kf, s, *current_key, err);
-			g_hash_table_insert (ht, g_strdup(*current_key + strlen(p)), value);
+	for (gchar **pk = all_keys; all_keys && *pk ;pk++) {
+		const char *key = *pk;
+		if (g_str_has_prefix(key, p)) {
+			gchar *value = g_key_file_get_value (kf, s, key, err);
+			g_hash_table_insert (ht, g_strdup(key + strlen(p)), value);
 		}
 	}
 
 	g_strfreev(all_keys);
 	return ht;
-error:
-	if (ht)
-		g_hash_table_destroy(ht);
-	if (all_keys)
-		g_strfreev(all_keys);
-	return NULL;
 }
 
 static gchar*
@@ -1617,24 +1610,18 @@ _cfg_reload(gboolean services_only, GError **err)
 				WARN("reconfigure : glob error : %s", strerror(errno));
 		}
 		else {
-			char **p_str;
-
-			DEBUG("reconfigure : glob done, %"G_GSIZE_FORMAT" elements found", subfiles_glob.gl_pathc);
-			for (p_str=subfiles_glob.gl_pathv; p_str && *p_str ;p_str++) {
+			for (char **ps=subfiles_glob.gl_pathv; subfiles_glob.gl_pathv && *ps ;ps++) {
+				const char *path = *ps;
 				GError *gerr_local = NULL;
-				GKeyFile *sub_kf = NULL;
-
-				TRACE("Loading a new file");
-
-				sub_kf = g_key_file_new();
-				if (!g_key_file_load_from_file(sub_kf, *p_str, 0, &gerr_local))
-					WARN("Configuration file [%s] not parsed : %s", *p_str,
+				GKeyFile *sub_kf = g_key_file_new();
+				if (!g_key_file_load_from_file(sub_kf, path, 0, &gerr_local))
+					WARN("Configuration file [%s] not parsed : %s", path,
 						gerr_local ? gerr_local->message : "");
 				else if (!_cfg_reload_file(sub_kf, TRUE, &gerr_local))
-					WARN("Configuration file [%s] not loaded : %s", *p_str,
+					WARN("Configuration file [%s] not loaded : %s", path,
 						gerr_local ? gerr_local->message : "");
 				else
-					INFO("Loaded service file [%s]", *p_str);
+					INFO("Loaded service file [%s]", path);
 
 				if (gerr_local)
 					g_clear_error(&gerr_local);
