@@ -51,7 +51,6 @@ struct child_info_s {
 	gboolean enabled;
 	gboolean respawn;
 	time_t last_start_attempt;
-	time_t last_kill_attempt;
 	guint counter_started;
 	guint counter_died;
 	struct {

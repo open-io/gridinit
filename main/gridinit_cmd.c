@@ -69,7 +69,6 @@ struct child_info_s {
 	gboolean breakable;
 	guint32 user_flags;
 	time_t last_start_attempt;
-	time_t last_kill_attempt;
 	guint counter_started;
 	guint counter_died;
 	struct {

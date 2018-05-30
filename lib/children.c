@@ -109,9 +109,15 @@ struct child_s {
 	/* Useful stats */
 	guint counter_started;
 	guint counter_died;
+
+	/* wall-clock time */
+	time_t last_start;
+
+	/* monotonic-clock time */
 	time_t last_start_attempt;
 	time_t first_kill_attempt;
 	time_t last_kill_attempt;
+
 	struct {
 		time_t t0;
 		time_t t1;
@@ -232,8 +238,7 @@ _child_get_info(struct child_s *c, struct child_info_s *ci)
 	ci->gid = c->gid;
 	ci->counter_started = c->counter_started;
 	ci->counter_died = c->counter_died;
-	ci->last_start_attempt = c->last_start_attempt;
-	ci->last_kill_attempt = c->last_kill_attempt;
+	ci->last_start_attempt = c->last_start;
 
 	ci->rlimits.core_size = i64tolong(c->rlimits.core_size);
 	ci->rlimits.stack_size = i64tolong(c->rlimits.stack_size);
@@ -397,6 +402,7 @@ _child_start(struct child_s *sd, void *udata, supervisor_cb_f cb)
 	bzero(&saved_limits, sizeof(saved_limits));
 
 	sd->last_start_attempt = _monotonic_seconds();
+	sd->last_start = time(0);
 
 	_child_set_rlimits(&(sd->rlimits), &saved_limits);
 	sd->pid = fork();
