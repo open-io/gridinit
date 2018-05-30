@@ -631,12 +631,13 @@ help(char **args)
 	g_print("\n COMMANDS:\n");
 	g_print("  status* : Displays the status of the given processes or groups\n");
 	g_print("  start   : Starts the given processes or groups, even if broken\n");
-	g_print("  stop    : Stops the given processes or groups, they won't be automatically\n");
+	g_print("  kill    : Stops the given processes or groups, they won't be automatically\n");
 	g_print("            restarted even after a configuration reload\n");
-	g_print("  restart : Restart the given processes or groups\n");
-	g_print("  reload  : reloads the configuration, stopping obsolete processes, starting\n");
+	g_print("  stop    : Calls 'kill' until the children exit\n");
+	g_print("  restart : Restarts the given processes or groups\n");
+	g_print("  reload  : Reloads the configuration, stopping obsolete processes, starting\n");
 	g_print("            the newly discovered. Broken or stopped processes are not restarted\n");
-	g_print("  repair  : removes the broken flag set on a process. Start must be called to\n");
+	g_print("  repair  : Removes the broken flag set on a process. Start must be called to\n");
 	g_print("            restart the process.\n");
 	g_print("with ID the key of a process, or '@GROUP', with GROUP the name of a process\n");
 	g_print("group\n");
