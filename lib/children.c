@@ -38,7 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 time_t supervisor_default_delay_KILL = SUPERVISOR_DEFAULT_TIMEOUT_KILL;
 
 static time_t _monotonic_seconds(void) {
-    return g_get_monotonic_time() / G_TIME_SPAN_SECOND;
+	return g_get_monotonic_time() / G_TIME_SPAN_SECOND;
 }
 
 /**
@@ -462,8 +462,8 @@ _child_stop(struct child_s *sd)
 		if (sd->first_kill_attempt == 0)
 			sd->first_kill_attempt = now;
 		if (sd->delay_before_KILL > 0
-                && sd->first_kill_attempt > 0
-                && (now - sd->first_kill_attempt) > sd->delay_before_KILL) {
+				&& sd->first_kill_attempt > 0
+				&& (now - sd->first_kill_attempt) > sd->delay_before_KILL) {
 			DEBUG("Service [%s] did not exit after 60s, sending SIGKILL", sd->key);
 			kill(sd->pid, SIGKILL);
 		} else {
@@ -767,7 +767,7 @@ supervisor_children_register(const gchar *key, const gchar *cmd)
 	}
 
 	g_strlcpy(sd->key, key, sizeof(sd->key)-1);
-    sd->delay_before_KILL = supervisor_default_delay_KILL;
+	sd->delay_before_KILL = supervisor_default_delay_KILL;
 	sd->flags = MASK_STARTED|MASK_RESPAWN|MASK_DELAYED;
 	sd->working_directory = g_get_current_dir();
 	sd->command = g_strdup(cmd);

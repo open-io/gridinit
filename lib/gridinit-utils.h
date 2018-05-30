@@ -102,7 +102,7 @@ guint supervisor_children_mark_obsolete(void);
    Will send SIGKILL until expiration, then SIGTERM. */
 guint supervisor_children_kill_disabled(void);
 
-/* starts allt the stopped services in a state proper to be restarted */
+/* starts all the stopped services in a state proper to be restarted */
 guint supervisor_children_start_enabled(void *udata, supervisor_cb_f cb);
 
 /* Sets the 'enabled' flag on the service */
