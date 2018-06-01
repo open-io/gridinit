@@ -126,26 +126,22 @@ compare_child_info(gconstpointer p1, gconstpointer p2)
 }
 
 static const char *
-get_child_status(struct child_info_s *ci, gboolean *faulty)
+get_child_status(struct child_info_s *ci)
 {
 	struct keyword_set_s *kw;
 
 	kw = flag_color ? &KEYWORDS_COLOR : &KEYWORDS_NORMAL;
 
 	if (ci->broken) {
-		*faulty = TRUE;
 		return kw->broken;
 	}
 	if (!ci->enabled) {
-		*faulty = FALSE;
 		return kw->disabled;
 	}
 	if (ci->pid <= 0) {
-		*faulty = TRUE;
 		return kw->down;
 	}
 
-	*faulty = FALSE;
 	return kw->up;
 }
 
@@ -421,14 +417,15 @@ command_status(int lvl, int argc, char **args)
 		break;
 	}
 
-	int count_faulty = 0, count_all = 0, count_misses = 0;
+        count_misses = 0, count_broken = 0, count_down = 0;
+	struct keyword_set_s *kw;
+	kw = flag_color ? &KEYWORDS_COLOR : & KEYWORDS_NORMAL;
 
 	/* iterate on the lines */
 	for (GList *l=jobs; l ;l=l->next) {
 		char str_time[20] = "---------- --------";
 		const char * str_status = "-";
 		struct child_info_s *ci = NULL;
-		gboolean faulty = FALSE;
 
 		ci = l->data;
 
@@ -436,12 +433,14 @@ command_status(int lvl, int argc, char **args)
 		if (ci->pid > 0)
 			strftime(str_time, sizeof(str_time), "%Y-%m-%d %H:%M:%S",
 				gmtime(&(ci->last_start_attempt)));
-		str_status = get_child_status(ci, &faulty);
+		str_status = get_child_status(ci);
 
 		/* Manage counters */
-		if (faulty)
-			count_faulty ++;
-		count_all ++;
+
+		if (str_status == kw->down)
+			count_down ++;
+		if (str_status == kw->broken)
+			count_broken ++;
 
 		/* Print now! */
 		switch (lvl) {
@@ -475,7 +474,16 @@ command_status(int lvl, int argc, char **args)
 	g_list_free_full(all_jobs, (GDestroyNotify)child_info_free);
 	g_list_free(jobs);
 
-	return !(!count_misses && !count_faulty && (!argc || count_all > 0));
+	int rc = 0;
+
+	if (count_down)
+		rc |= 1;
+	if (count_misses)
+		rc |= 2;
+	if (count_broken)
+		rc |= 4;
+
+	return rc;
 }
 
 static int
