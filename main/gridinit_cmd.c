@@ -126,11 +126,8 @@ compare_child_info(gconstpointer p1, gconstpointer p2)
 }
 
 static const char *
-get_child_status(struct child_info_s *ci)
+get_child_status(struct child_info_s *ci, struct keyword_set_s *kw)
 {
-	struct keyword_set_s *kw;
-
-	kw = flag_color ? &KEYWORDS_COLOR : &KEYWORDS_NORMAL;
 
 	if (ci->broken) {
 		return kw->broken;
@@ -433,7 +430,7 @@ command_status(int lvl, int argc, char **args)
 		if (ci->pid > 0)
 			strftime(str_time, sizeof(str_time), "%Y-%m-%d %H:%M:%S",
 				gmtime(&(ci->last_start_attempt)));
-		str_status = get_child_status(ci);
+		str_status = get_child_status(ci, kw);
 
 		/* Manage counters */
 
