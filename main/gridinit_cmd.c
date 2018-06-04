@@ -417,7 +417,7 @@ command_status(int lvl, int argc, char **args)
 		break;
 	}
 
-	count_misses = 0, count_broken = 0, count_down = 0;
+	int count_misses = 0, count_broken = 0, count_down = 0;
 	struct keyword_set_s *kw;
 	kw = flag_color ? &KEYWORDS_COLOR : & KEYWORDS_NORMAL;
 
