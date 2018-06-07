@@ -48,6 +48,7 @@ static gboolean flag_help = FALSE;
 static gchar sock_path[1024];
 static gchar line[65536];
 static gboolean flag_color = FALSE;
+static gboolean flag_json = FALSE;
 
 #define BOOL(i) (i?1:0)
 
@@ -275,6 +276,62 @@ dump_as_is(FILE *in_stream, void *udata)
 	fflush(stdout);
 }
 
+
+static void
+print_as_json(gchar *status, gchar *start, gchar *error)
+{
+	gchar header[] = "  {\n";
+	gchar footer[] = "  }";
+	gchar tab[] = "    ";
+
+	fprintf(stdout, "%s", header);
+	fprintf(stdout, "%s\"status\": \"%s\",\n", tab, status);
+	fprintf(stdout, "%s\"start\": \"%s\",\n", tab, start);
+	fprintf(stdout, "%s\"error\": \"%s\",\n", tab, error);
+	fprintf(stdout, "%s", footer);
+}
+
+static void
+dump_as_json(FILE *in_stream, void *udata)
+{
+	gchar *start, *status;
+	int code, first = 1;
+	gchar head[] = "[\n";
+	gchar footer[] = "\n]\n";
+	struct keyword_set_s *kw;
+	struct dump_as_is_arg_s *dump_args;
+
+	kw = flag_color ? &KEYWORDS_COLOR : &KEYWORDS_NORMAL;
+
+	dump_args = udata;
+	fprintf(stdout, "%s", head);
+	while(!feof(in_stream) && !ferror(in_stream)) {
+		bzero(line, sizeof(line));
+		if (NULL != fgets(line, sizeof(line), in_stream)) {
+			start = NULL;
+			(void)unpack_line(line, &start, &code);
+
+			if (dump_args) {
+				if (code==0 || code==EALREADY)
+					dump_args->count_success ++;
+				else
+					dump_args->count_errors ++;
+			}
+			if (!first)
+				fprintf(stdout, ",\n");
+			first = 0;
+			status = (gchar *)(code == 0 ? kw->done : (code==EALREADY?kw->already:kw->failed));
+			print_as_json(status, start, strerror(code));
+		}
+	}
+	fprintf(stdout, "%s", footer);
+	fflush(stdout);
+}
+
+
+
+
+
 static FILE*
 open_cnx(void)
 {
@@ -483,21 +540,132 @@ command_status(int lvl, int argc, char **args)
 	return rc;
 }
 
+
+static int
+command_status_json(int lvl, int argc, char **args)
+{
+	char fmt_line[256];
+
+	int *counters = alloca(sizeof(int) * (argc+1));
+	memset(counters, 0, sizeof(int) * (argc+1));
+
+	GList *all_jobs = _fetch_services();
+	GList *jobs = _filter_services(all_jobs, args, counters);
+
+	fprintf(stdout, "[\n");
+	char fmt_str[]="    \"%s\": \"%s\",\n";
+	char fmt_int[]="    \"%s\": \"%d\",\n";
+	char fmt_lint[]="    \"%s\": \"%ld\",\n";
+	switch (lvl) {
+	case 0:
+		g_snprintf(fmt_line, sizeof(fmt_line),
+			   "  {\n%s%s%s%s\n  }",
+			   fmt_str, fmt_str, fmt_int, fmt_str);
+		break;
+	case 1:
+		g_snprintf(fmt_line, sizeof(fmt_line),
+			   "  {\n%s%s%s%s%s%s%s%s\n  }",
+			   fmt_str, fmt_str, fmt_int, fmt_int,
+			   fmt_int, fmt_str, fmt_str, fmt_str);
+		break;
+	default:
+		g_snprintf(fmt_line, sizeof(fmt_line),
+			   "  {\n%s%s%s%s%s%s%s%s%s%s%s\n  }",
+			   fmt_str, fmt_str, fmt_int, fmt_int, fmt_int,
+			   fmt_lint,fmt_lint,fmt_lint,fmt_str, fmt_str,
+			   fmt_str
+			   );
+		break;
+	}
+
+	int count_faulty = 0, count_all = 0, count_misses = 0;
+
+	/* iterate on the lines */
+	for (GList *l=jobs; l ;l=l->next) {
+		char str_time[20] = "---------- --------";
+		const char * str_status = "-";
+		struct child_info_s *ci = NULL;
+		gboolean faulty = FALSE;
+		ci = l->data;
+
+		/* Prepare some fields */
+		if (ci->pid > 0)
+			strftime(str_time, sizeof(str_time), "%Y-%m-%d %H:%M:%S",
+				gmtime(&(ci->last_start_attempt)));
+		str_status = get_child_status(ci, &faulty);
+
+		/* Manage counters */
+		if (faulty)
+			count_faulty ++;
+		count_all ++;
+
+		/* Print now! */
+		if(count_all-1)
+			fprintf(stdout, ",\n");
+
+		switch (lvl) {
+		case 0:
+
+			fprintf(stdout, fmt_line,
+				"key", ci->key, "status", str_status,
+				"pid", ci->pid,"group", ci->group);
+			break;
+		case 1:
+			fprintf(stdout, fmt_line,
+				"key", ci->key, "status", str_status,
+				"pid", ci->pid, "#start", ci->counter_started,
+				"#died", ci->counter_died, "since", str_time,
+				"group", ci->group, "cmd", ci->cmd);
+			break;
+		default:
+			fprintf(stdout, fmt_line,
+				"key", ci->key, "status", str_status,
+				"pid", ci->pid, "#start", ci->counter_started,
+				"#died", ci->counter_died, "csz", ci->rlimits.core_size,
+				"ssz", ci->rlimits.stack_size, "mfd", ci->rlimits.nb_files,
+				"since", str_time, "group", ci->group,
+				"cmd", ci->cmd);
+			break;
+		}
+	}
+
+	fprintf(stdout, "\n]\n");
+	fflush(stdout);
+
+	/* If patterns have been specified, we must find items (the user
+	 * expects something to show up */
+	for (int i=0; i<argc ;i++) {
+		if (!counters[i])
+			count_misses ++;
+	}
+
+	g_list_free_full(all_jobs, (GDestroyNotify)child_info_free);
+	g_list_free(jobs);
+
+	return !(!count_misses && !count_faulty && (!argc || count_all > 0));
+}
+
 static int
 command_status0(int argc, char **args)
 {
+	if (flag_json)
+		return command_status_json(0, argc, args);
 	return command_status(0, argc, args);
 }
 
 static int
 command_status1(int argc, char **args)
 {
+	if (flag_json)
+		return command_status_json(1, argc, args);
 	return command_status(1, argc, args);
 }
 
 static int
 command_status2(int argc, char **args)
 {
+	if (flag_json)
+		return command_status_json(2, argc, args);
 	return command_status(2, argc, args);
 }
 
@@ -505,7 +673,10 @@ static int
 command_start(int argc, char **args)
 {
 	struct dump_as_is_arg_s dump_args = {};
-	int rc = send_commandv(dump_as_is, &dump_args, "start", argc, args);
+	void *dumper = dump_as_is;
+
+	if(flag_json) dumper = dump_as_json;
+	int rc = send_commandv(dumper, &dump_args, "start", argc, args);
 	return !rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
@@ -515,7 +686,10 @@ static int
 command_kill(int argc, char **args)
 {
 	struct dump_as_is_arg_s dump_args = {};
-	int rc = send_commandv(dump_as_is, &dump_args, "stop", argc, args);
+	void *dumper = dump_as_is;
+
+	if(flag_json) dumper = dump_as_json;
+	int rc = send_commandv(dumper, &dump_args, "stop", argc, args);
 	return !rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
@@ -539,7 +713,8 @@ command_stop(int argc, char **args)
 	}
 
 	while (!_all_down()) {
-		g_print("# Stopping...\n");
+		if (!flag_json)
+			g_print("# Stopping...\n");
 		int rc = command_kill(argc, args);
 		if (rc != 0)
 			return rc;
@@ -552,7 +727,10 @@ static int
 command_restart(int argc, char **args)
 {
 	struct dump_as_is_arg_s dump_args = {};
-	int rc = send_commandv(dump_as_is, &dump_args, "restart", argc, args);
+	void *dumper = dump_as_is;
+
+	if(flag_json) dumper = dump_as_json;
+	int rc = send_commandv(dumper, &dump_args, "restart", argc, args);
 	return !rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
@@ -562,7 +740,10 @@ static int
 command_repair(int argc, char **args)
 {
 	struct dump_as_is_arg_s dump_args = {};
-	int rc = send_commandv(dump_as_is, &dump_args, "repair", argc, args);
+	void *dumper = dump_as_is;
+
+	if(flag_json) dumper = dump_as_json;
+	int rc = send_commandv(dumper, &dump_args, "repair", argc, args);
 	return !rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
@@ -572,8 +753,11 @@ static int
 command_reload(int argc, char **args)
 {
 	struct dump_as_is_arg_s dump_args = {};
+	void *dumper = dump_as_is;
 	(void) argc, (void) args;
-	int rc = send_commandv(dump_as_is, &dump_args, "reload", 0, (char*[]){NULL});
+
+	if(flag_json) dumper = dump_as_json;
+	int rc = send_commandv(dumper, &dump_args, "reload", 0, (char*[]){NULL});
 	return !rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
@@ -605,7 +789,7 @@ main_options(int argc, char **args)
 
 	g_strlcpy(sock_path, GRIDINIT_SOCK_PATH, sizeof(sock_path));
 
-	while ((opt = getopt(argc, args, "chS:")) != -1) {
+	while ((opt = getopt(argc, args, "chjS:")) != -1) {
 		switch (opt) {
 			case 'c':
 				flag_color = TRUE;
@@ -617,6 +801,9 @@ main_options(int argc, char **args)
 			case 'h':
 				flag_help = TRUE;
 				break;
+			case 'j':
+				flag_json = TRUE;
+				break;
 		}
 	}
 
@@ -627,11 +814,12 @@ static void
 help(char **args)
 {
 	close(2);
-	g_print("Usage: %s [-h|-c|-S SOCK]... (status{,2,3}|start|stop|reload|repair) [ID...]\n", args[0]);
+	g_print("Usage: %s [-h|-c|-j|-S SOCK]... (status{,2,3}|start|stop|reload|repair) [ID...]\n", args[0]);
 	g_print("\n OPTIONS:\n");
 	g_print("  -c      : coloured display\n");
 	g_print("  -h      : displays a little help section\n");
 	g_print("  -S SOCK : explicit unix socket path\n");
+	g_print("  -j      : output result by json\n");
 	g_print("\n COMMANDS:\n");
 	g_print("  status* : Displays the status of the given processes or groups\n");
 	g_print("  start   : Starts the given processes or groups, even if broken\n");
