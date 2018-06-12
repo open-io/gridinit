@@ -1236,7 +1236,7 @@ _cfg_section_service(GKeyFile *kf, const gchar *section, GError **err)
 			WARN("Failed to set 'tobestarted/tobestopped' for [%s] : %s", str_key, strerror(errno));
 	}
 
-	/* on_die management. Respawn, cry, or abort */
+	/* on_die management. Respawn, cry */
 	if (str_ondie) {
 		if (0 == g_ascii_strcasecmp(str_ondie, "cry")) {
 			if (0 > supervisor_children_set_respawn(str_key, FALSE))
