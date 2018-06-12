@@ -868,7 +868,7 @@ supervisor_children_enable(const char *key, gboolean enable)
 
 		/* We reset the 'last_start_attempt' field. This is necessary
 		 * to explicitely restart services configured with the 'cry'
-		 * or 'exit' value for their 'on_die' parameter */
+		 * value for their 'on_die' parameter */
 		sd->last_start_attempt = 0;
 	}
 
