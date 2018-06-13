@@ -24,12 +24,6 @@ target_link_libraries(gridinit_cmd
 		gridinit-internals
 		${GLIB2_LIBRARIES} ${LIBEVENT_LIBRARIES})
 
-add_executable(gridinit_testcmd
-		test_cmd.c)
-target_link_libraries(gridinit_testcmd
-		gridinit-utils gridinit-internals
-		${GLIB2_LIBRARIES})
-
 install(TARGETS gridinit gridinit_cmd
 		LIBRARY DESTINATION ${LD_LIBDIR}
 		PUBLIC_HEADER DESTINATION include
