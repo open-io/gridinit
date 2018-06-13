@@ -666,29 +666,48 @@ supervisor_children_disable_obsolete(void)
 	return count;
 }
 
+static inline int
+_is_dead(const pid_t needle, pid_t *pincushion, register const int max)
+{
+	for (register int i=0; i<max ;++i) {
+		if (needle == pincushion[i])
+			return 1;
+	}
+	return 0;
+}
+
 guint
 supervisor_children_catharsis(void *udata, supervisor_cb_f cb)
 {
-	pid_t pid_dead;
-	guint count;
 	struct child_s *sd;
-	struct child_info_s ci;
+	guint count = 0;
+	int pids_idx = 0;
+	pid_t pid;
+	pid_t pids[1024];
 
-	count = 0;
-	while ((pid_dead = waitpid(-1, NULL, WNOHANG)) > 0) {
-		FOREACH_CHILD(sd) {
-			if (sd->pid == pid_dead) {
-				count++;
-				_child_notify_death(sd);
-				if (cb) {
-					_child_get_info(sd, &ci);
-					cb(udata, &ci);
-				}
-				sd->pid = -1;
-				break;
-			}
-		}
+	g_assert_nonnull(cb);
+
+	/* Consume a batch of dead children */
+	while (pids_idx < 1024 && (pid = waitpid(-1, NULL, WNOHANG)) > 0)
+		pids[pids_idx++] = pid;
+	if (!pids_idx)
+		return 0;
+
+	/* Locate the concerned structures, for each dead child */
+	FOREACH_CHILD(sd) {
+		if (!_is_dead(sd->pid, pids, pids_idx))
+			continue;
+
+		count++;
+		_child_notify_death(sd);
+
+		struct child_info_s ci = {};
+		_child_get_info(sd, &ci);
+		cb(udata, &ci);
+
+		sd->pid = -1;
 	}
+
 	return count;
 }
 
