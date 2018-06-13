@@ -1,7 +1,7 @@
 /*
 gridinit, a monitor for non-daemon processes.
 Copyright (C) 2013 AtoS Worldline, original work aside of Redcurrant
-Copyright (C) 2015 OpenIO, modified for OpenIO Software Defined Storage
+Copyright (C) 2015-2018 OpenIO SAS
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
