@@ -108,8 +108,6 @@ static GHashTable *default_env = NULL;
 
 static gboolean _cfg_reload(gboolean services_only, GError **err);
 
-static void servers_ensure(void);
-
 static GOptionEntry entries[] = {
 	{"daemonize", 'd', 0, G_OPTION_ARG_NONE, (gboolean *)&flag_daemon,
 	 "Detaches then daemonizes the gridinit", NULL},
@@ -544,9 +542,7 @@ supervisor_signal_handler(int s, short flags, void *udata)
 	case SIGUSR1:
 		flag_more_verbose = ~0;
 		return;
-	case SIGUSR2:
-		flag_check_socket = ~0;
-		return;
+	case SIGUSR2: /* ignored */
 	case SIGPIPE: /* ignored */
 		return;
 	case SIGINT:
@@ -917,42 +913,6 @@ servers_clean(void)
 
 	g_list_free(list_of_servers);
 	list_of_servers = NULL;
-}
-
-/**
- * Reopens all the UNIX server sockets bond on paths that changed.
- */
-static void
-servers_ensure(void)
-{
-	GList *l;
-
-	flag_check_socket = 0;
-	TRACE("About to ensure the server sockets");
-
-	for (l=list_of_servers; l ; l=l->next) {
-		struct server_sock_s *p_server = l->data;
-
-		NOTICE("Ensuring socket fd=%d bond to [%s]", p_server->fd, p_server->url);
-
-		if (servers_is_unix(p_server) && !servers_is_the_same(p_server)) {
-
-			/* close */
-			servers_unmonitor_one(p_server);
-
-			/* reopen */
-			p_server->fd = __open_unix_server(p_server->url);
-			if (p_server->fd < 0) {
-				WARN("unix: failed to reopen a server bond to [%s] : %s",
-						p_server->url, strerror(errno));
-			}
-			else if (!servers_monitor_one(p_server)) {
-				WARN("unix: failed to monitor a server bond to [%s] : %s",
-						p_server->url, strerror(errno));
-				servers_unmonitor_one(p_server);
-			}
-		}
-	}
 }
 
 /* Signals management ------------------------------------------------------ */
@@ -1984,8 +1944,6 @@ main(int argc, char ** args)
 
 		if (!flag_running)
 			break;
-		if (flag_check_socket)
-			servers_ensure();
 		if (flag_more_verbose) {
 			NOTICE("Increasing verbosity for 15 minutes");
 			logger_verbose();
