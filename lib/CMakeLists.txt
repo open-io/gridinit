@@ -1,7 +1,7 @@
 
 include_directories(BEFORE .)
 
-add_library(gridinit-utils SHARED
+add_library(gridinit-utils STATIC
 		uid.c
 		common.c
 		limits.c
@@ -12,13 +12,3 @@ add_library(gridinit-utils SHARED
 
 target_link_libraries(gridinit-utils
 		${GLIB2_LIBRARIES})
-
-set_target_properties(gridinit-utils PROPERTIES
-		PUBLIC_HEADER "gridinit-utils.h"
-		SOVERSION ${ABI_VERSION})
-
-install(TARGETS gridinit-utils
-		LIBRARY DESTINATION ${LD_LIBDIR}
-		PUBLIC_HEADER DESTINATION include
-		RUNTIME DESTINATION bin)
-
