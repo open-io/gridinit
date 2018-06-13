@@ -1,15 +1,10 @@
-
 include_directories(BEFORE .)
 
-add_library(gridinit-utils STATIC
+add_executable(gridinit
 		uid.c
 		common.c
 		limits.c
-		children.c)
-target_link_libraries(gridinit-utils
-		${GLIB2_LIBRARIES})
-
-add_executable(gridinit
+		children.c
 		gridinit.c
 		utils.c
 		cnx.c)
