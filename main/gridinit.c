@@ -979,6 +979,8 @@ main_usage(void)
 		"    -g GROUP : limits the services loading to those belonging to\n"
 		"               the specified group. This option can be repeated.\n"
 		"    -q       : quiet mode, suppress non-error output\n"
+		"    -v       : verbose output mode.\n"
+		"    -s ID    : enable logs using syslog with the given ID.\n"
 		"\n", g_get_prgname());
 }
 
