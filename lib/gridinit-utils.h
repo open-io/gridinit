@@ -153,10 +153,6 @@ int supervisor_children_set_ids(const gchar *key, gint32 uid, gint32 gid);
 
 int supervisor_children_set_delay_sigkill(const char *key, time_t delay);
 
-/* Fork and pipe ----------------------------------------------------------- */
-
-int command_get_pipe(const gchar *str_cmd);
-
 /* Privileges -------------------------------------------------------------- */
 
 gboolean supervisor_rights_init(const char *user_name, const char *group_name,
