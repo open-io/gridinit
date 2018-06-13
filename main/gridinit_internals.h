@@ -84,8 +84,6 @@ int __open_unix_server(const char *path);
 
 int __open_unix_client(const char *path);
 
-int __open_inet_server(const char *url);
-
 /* Groups matching */
 
 gboolean gridinit_group_in_set(const gchar *group, const gchar *set);
