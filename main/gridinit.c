@@ -54,7 +54,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "./gridinit_alerts.h"
 #include "../lib/gridinit-internals.h"
 
-#define USERFLAG_ONDIE_EXIT        0x00000001
 #define USERFLAG_PROCESS_DIED      0x00000002
 #define USERFLAG_PROCESS_RESTARTED 0x00000004
 
@@ -208,13 +207,6 @@ static void
 alert_proc_died(void *udata, struct child_info_s *ci)
 {
 	(void) udata;
-
-	/* if the user_flags on the process contain the on_die:exit flag,
-	 * then we mark the gridinit to stop */
-	if (ci->user_flags & USERFLAG_ONDIE_EXIT) {
-		supervisor_children_enable(ci->key, FALSE);
-		flag_running = FALSE;
-	}
 
 	if (ci->started)
 		supervisor_children_set_user_flags(ci->key, USERFLAG_PROCESS_DIED);
@@ -1244,15 +1236,11 @@ _cfg_section_service(GKeyFile *kf, const gchar *section, GError **err)
 			WARN("Failed to set 'tobestarted/tobestopped' for [%s] : %s", str_key, strerror(errno));
 	}
 
-	/* on_die management. Respawn, cry, or abort */
+	/* on_die management. Respawn, cry */
 	if (str_ondie) {
 		if (0 == g_ascii_strcasecmp(str_ondie, "cry")) {
 			if (0 > supervisor_children_set_respawn(str_key, FALSE))
 				WARN("Failed to make [%s] respawn : %s", str_key, strerror(errno));
-		}
-		else if (0 == g_ascii_strcasecmp(str_ondie, "exit")) {
-			supervisor_children_set_user_flags(str_key, USERFLAG_ONDIE_EXIT);
-			supervisor_children_set_respawn(str_key, FALSE);
 		}
 		else if (0 == g_ascii_strcasecmp(str_ondie, "respawn"))
 			supervisor_children_set_respawn(str_key, TRUE);
