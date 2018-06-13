@@ -37,9 +37,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "gridinit-utils.h"
 #include "gridinit_internals.h"
 
-static volatile int backlog_unix = 65536;
-static volatile int backlog_tcp = 4096;
-
 int
 __open_unix_client(const char *path)
 {
@@ -55,12 +52,6 @@ __open_unix_client(const char *path)
 	sock = socket(PF_UNIX, SOCK_STREAM, 0);
 	if (sock < 0)
 		return -1;
-
-#if 0
-	/* Got to non-blocking mode */
-	if (-1 == fcntl(sock, F_SETFL, O_NONBLOCK))
-		goto label_error;
-#endif
 
 	/* Bind to file */
 	local.sun_family = AF_UNIX;
@@ -117,7 +108,7 @@ __open_unix_server(const char *path)
 		goto label_error;
 
 	/* Listen on that socket */
-	if (-1 == listen(sock, backlog_unix))
+	if (-1 == listen(sock, 65536))
 		goto label_error;
 
 	errno = 0;
