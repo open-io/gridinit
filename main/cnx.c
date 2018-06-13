@@ -24,9 +24,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <fcntl.h>
 #include <string.h>
 #include <strings.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -34,7 +31,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <glib.h>
 
-#include "gridinit-utils.h"
 #include "gridinit_internals.h"
 
 int
@@ -58,57 +54,6 @@ __open_unix_client(const char *path)
 	g_strlcpy(local.sun_path, path, sizeof(local.sun_path)-1);
 
 	if (-1 == connect(sock, (struct sockaddr *)&local, sizeof(local)))
-		goto label_error;
-
-	errno = 0;
-	return sock;
-
-label_error:
-	if (sock >= 0) {
-		typeof(errno) errsav;
-		errsav = errno;
-		close(sock);
-		errno = errsav;
-	}
-	return -1;
-}
-
-int
-__open_unix_server(const char *path)
-{
-	struct sockaddr_un local = {};
-
-	if (!path || strlen(path) >= sizeof(local.sun_path)) {
-		errno = EINVAL;
-		return -1;
-	}
-
-	/* Create ressources to monitor */
-#ifdef SOCK_CLOEXEC
-# define SOCK_FLAGS SOCK_CLOEXEC
-#else
-# define SOCK_FLAGS 0
-#endif
-
-	int sock = socket(PF_UNIX, SOCK_STREAM | SOCK_FLAGS, 0);
-	if (sock < 0)
-		return -1;
-
-#ifndef SOCK_CLOEXEC
-# ifdef FD_CLOEXEC
-	(void) fcntl(sock, F_SETFD, fcntl(sock, F_GETFD)|FD_CLOEXEC);
-# endif
-#endif
-
-	/* Bind to file */
-	local.sun_family = AF_UNIX;
-	g_strlcpy(local.sun_path, path, sizeof(local.sun_path)-1);
-
-	if (-1 == bind(sock, (struct sockaddr *)&local, sizeof(local)))
-		goto label_error;
-
-	/* Listen on that socket */
-	if (-1 == listen(sock, 65536))
 		goto label_error;
 
 	errno = 0;
