@@ -2,26 +2,21 @@
 include_directories(BEFORE .
 		../lib)
 
-add_library(gridinit-internals STATIC
-		utils.c
-		cnx.c
-		gridinit_internals.h)
-target_link_libraries(gridinit-internals
-		${GLIB2_LIBRARIES})
-
 add_executable(gridinit
 		gridinit.c
 		alerting.c
-		gridinit_alerts.h)
+		utils.c
+		cnx.c)
 target_link_libraries(gridinit
-		gridinit-utils gridinit-internals
+		gridinit-utils
 		${GLIB2_LIBRARIES} ${LIBEVENT_LIBRARIES})
 
 add_executable(gridinit_cmd
 		gridinit_cmd.c
-		format_output.c)
+		format_output.c
+		utils.c
+		cnx.c)
 target_link_libraries(gridinit_cmd
-		gridinit-internals
 		${GLIB2_LIBRARIES} ${LIBEVENT_LIBRARIES})
 
 install(TARGETS gridinit gridinit_cmd
