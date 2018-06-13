@@ -44,7 +44,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <gridinit-utils.h>
 #include "./gridinit_internals.h"
-#include "./gridinit_alerts.h"
 
 #define USERFLAG_PROCESS_DIED      0x00000002
 #define USERFLAG_PROCESS_RESTARTED 0x00000004
@@ -222,20 +221,17 @@ static void
 alert_send_deferred(void *udata, struct child_info_s *ci)
 {
 	(void) udata;
-	gchar buff[1024];
 
 	/* Handle the alerting of broken services */
 	if ((ci->user_flags & USERFLAG_PROCESS_DIED) && ci->broken) {
 		supervisor_children_del_user_flags(ci->key, USERFLAG_PROCESS_DIED);
-		g_snprintf(buff, sizeof(buff), "Process broken [%s] %s", ci->key, ci->cmd);
-		gridinit_alerting_send(GRIDINIT_EVENT_BROKEN, buff);
+		ERROR("Process broken [%s] %s", ci->key, ci->cmd);
 	}
 
 	/* Handle the alerting of successfully restarted services */
 	if (!(ci->user_flags & USERFLAG_PROCESS_DIED) && (ci->user_flags & USERFLAG_PROCESS_RESTARTED)) {
 		supervisor_children_del_user_flags(ci->key, USERFLAG_PROCESS_RESTARTED);
-		g_snprintf(buff, sizeof(buff), "Process restarted [%s] %s", ci->key, ci->cmd);
-		gridinit_alerting_send(GRIDINIT_EVENT_RESTARTED, buff);
+		NOTICE("Process restarted [%s] %s", ci->key, ci->cmd);
 	}
 }
 
@@ -1272,60 +1268,6 @@ label_exit:
 }
 
 static gboolean
-_cfg_section_alert(GKeyFile *kf, const gchar *section, GError **err)
-{
-	gchar cfg_plugin[1024], cfg_symbol[128];
-	gchar **p_key, **keys;
-
-	bzero(cfg_plugin, sizeof(cfg_plugin));
-	bzero(cfg_symbol, sizeof(cfg_symbol));
-
-	keys = g_key_file_get_keys(kf, section, NULL, err);
-	if (!keys)
-		return FALSE;
-
-	for (p_key=keys; *p_key ;p_key++) {
-		gchar *str;
-
-		str = g_key_file_get_string(kf, section, *p_key, NULL);
-
-		if (!g_ascii_strcasecmp(*p_key, "plugin")) {
-			if (*cfg_plugin)
-				NOTICE("Alerting plugin already known : plugin=[%s]", cfg_plugin);
-			else
-				g_strlcpy(cfg_plugin, str, sizeof(cfg_plugin)-1);
-		}
-		else if (!g_ascii_strcasecmp(*p_key, "symbol")) {
-			if (*cfg_symbol)
-				NOTICE("Alerting symbol already known : symbol=[%s]", cfg_symbol);
-			else
-				g_strlcpy(cfg_symbol, str, sizeof(cfg_symbol)-1);
-		}
-
-		g_free(str);
-	}
-
-	g_strfreev(keys);
-
-	if (!*cfg_symbol || !*cfg_plugin) {
-		WARN("Missing configuration keys : both \"plugin\" and \"symbol\""
-			" must be present in section [%s]", section);
-		return FALSE;
-	}
-	else {
-		GHashTable *ht_params;
-		gboolean rc;
-		ht_params = _cfg_extract_parameters(kf, section, "config.", err);
-		rc = gridinit_alerting_configure(cfg_plugin, cfg_symbol, ht_params, err);
-		g_hash_table_destroy(ht_params);
-		if (!rc)
-			return FALSE;
-	}
-
-	return TRUE;
-}
-
-static gboolean
 _cfg_section_default(GKeyFile *kf, const gchar *section, GError **err)
 {
 	gchar buf_user[256]="", buf_group[256]="";
@@ -1486,13 +1428,6 @@ _cfg_reload_file(GKeyFile *kf, gboolean services_only, GError **err)
 			INFO("reconfigure : loading main parameters from section [%s]", *p_group);
 			if (!_cfg_section_default(kf, *p_group, err)) {
 				WARN("invalid default section");
-				goto label_exit;
-			}
-		}
-		else if (!services_only && !g_ascii_strcasecmp(*p_group, "alerts")) {
-			INFO("reconfigure : loading alerting parameters from section [%s]", *p_group);
-			if (!_cfg_section_alert(kf, *p_group, err)) {
-				WARN("Invalid alerts section");
 				goto label_exit;
 			}
 		}
@@ -1986,7 +1921,6 @@ label_exit:
 	signals_clean();
 	g_free(config_path);
 
-	gridinit_alerting_close();
 	closelog();
 	return rc;
 }

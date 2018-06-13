@@ -86,14 +86,6 @@ int __open_unix_client(const char *path);
 
 int __open_inet_server(const char *url);
 
-/* Alerting */
-
-gboolean gridinit_alerting_configure(const gchar *path, const gchar *symbol, GHashTable *ht, GError **err);
-
-void gridinit_alerting_send(int event, const char *msg);
-
-void gridinit_alerting_close(void);
-
 /* Groups matching */
 
 gboolean gridinit_group_in_set(const gchar *group, const gchar *set);

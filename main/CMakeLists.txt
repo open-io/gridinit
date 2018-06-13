@@ -11,7 +11,6 @@ target_link_libraries(gridinit-utils
 
 add_executable(gridinit
 		gridinit.c
-		alerting.c
 		utils.c
 		cnx.c)
 target_link_libraries(gridinit
