@@ -17,10 +17,6 @@ You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifdef HAVE_CONFIG_H
-# include "../config.h"
-#endif
-
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
@@ -33,7 +29,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <glib.h>
 
 #include "./gridinit-utils.h"
-#include "./gridinit-internals.h"
 
 time_t supervisor_default_delay_KILL = SUPERVISOR_DEFAULT_TIMEOUT_KILL;
 

@@ -17,19 +17,14 @@ You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifdef HAVE_CONFIG_H
-# include "../config.h"
-#endif
-
-#include "./gridinit-utils.h"
-#include "./gridinit-internals.h"
-
 #include <string.h>
 #include <errno.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <pwd.h>
 #include <grp.h>
+
+#include "./gridinit-utils.h"
 
 static volatile uid_t effective_uid = 0;
 static volatile uid_t effective_gid = 0;

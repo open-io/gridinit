@@ -17,13 +17,6 @@ You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifdef HAVE_CONFIG_H
-# include "../config.h"
-#endif
-#ifndef LOG_DOMAIN
-# define LOG_DOMAIN "gridinit"
-#endif
-
 #include <event.h>
 #include <glib.h>
 #include <gmodule.h>
@@ -31,7 +24,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <gridinit-utils.h>
 #include "./gridinit_internals.h"
 #include "./gridinit_alerts.h"
-#include "../lib/gridinit-internals.h"
 
 static GModule *module = NULL;
 static struct gridinit_alert_handle_s *handle = NULL;

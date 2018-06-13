@@ -17,13 +17,6 @@ You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifdef HAVE_CONFIG_H
-# include "../config.h"
-#endif
-#ifndef LOG_DOMAIN
-# define LOG_DOMAIN "gridinit_cmd"
-#endif
-
 #include <stdlib.h>
 #include <string.h>
 #include <getopt.h>
@@ -38,7 +31,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <glib.h>
 
 #include "./gridinit_internals.h"
-#include "../lib/gridinit-internals.h"
 
 #define MINI 0
 #define MEDIUM 1

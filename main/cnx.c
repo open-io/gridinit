@@ -17,13 +17,6 @@ You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifdef HAVE_CONFIG_H
-# include "../config.h"
-#endif
-#ifndef LOG_DOMAIN
-# define LOG_DOMAIN "gridinit"
-#endif
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <errno.h>
@@ -42,7 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <glib.h>
 
 #include "./gridinit_internals.h"
-#include "../lib/gridinit-internals.h"
+#include "../lib/gridinit-utils.h"
 
 static volatile int backlog_unix = 65536;
 static volatile int backlog_tcp = 4096;
