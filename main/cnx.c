@@ -34,8 +34,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <glib.h>
 
-#include "./gridinit_internals.h"
-#include "../lib/gridinit-utils.h"
+#include "gridinit-utils.h"
+#include "gridinit_internals.h"
 
 static volatile int backlog_unix = 65536;
 static volatile int backlog_tcp = 4096;
