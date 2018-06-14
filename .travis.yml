@@ -1,0 +1,19 @@
+sudo: required
+dist: trusty
+language: c
+install:
+  - sudo apt-add-repository "deb http://archive.ubuntu.com/ubuntu trusty-backports main restricted universe multiverse"
+  - curl http://mirror.openio.io/pub/repo/openio/APT-GPG-KEY-OPENIO-0 | sudo apt-key add -
+  - sudo apt-add-repository "deb http://mirror.openio.io/pub/repo/openio/sds/17.04/ubuntu/trusty ./"
+  - sudo apt-get update -qq
+  - sudo apt-get install -y --force-yes libevent-2.0-5 libevent-dev make cmake libglib2.0-dev
+  - virtualenv $HOME/oio && source $HOME/oio/bin/activate
+
+env:
+  - TEST_SUITE=build
+
+script:
+  - set -e
+  - mkdir /tmp/oio && source $HOME/oio/bin/activate
+  - export CMAKE_OPTS='-DCMAKE_INSTALL_PREFIX=/tmp/oio -DLD_LIBDIR=lib -DZK_LIBDIR=/usr/lib'
+  - if [ "build" == "${TEST_SUITE/*build*/build}" ] ; then cmake ${CMAKE_OPTS} -DCMAKE_BUILD_TYPE="Release" . && make all && make clean ; fi
