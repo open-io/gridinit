@@ -43,13 +43,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MINI 0
 #define MEDIUM 1
 
-static gboolean flag_help = FALSE;
 
-static gchar sock_path[1024];
+static gchar *sock_path;
 static gchar line[65536];
 static gboolean flag_color = FALSE;
-static gchar format[256];
-
+static gchar *format;
+static gboolean flag_version = FALSE;
 #define BOOL(i) (i?1:0)
 
 struct dump_as_is_arg_s {
@@ -115,6 +114,18 @@ static struct keyword_set_s KEYWORDS_COLOR = {
 	"[33mDOWN[0m    ",
 	"[36mDISABLED[0m",
 	"[32mUP[0m      "
+};
+
+static GOptionEntry entries[] = {
+	{"color", 'c', 0, G_OPTION_ARG_NONE, &flag_color,
+	 "coloured display \n", NULL},
+	{"sock-path", 'S', 0, G_OPTION_ARG_FILENAME, &sock_path,
+	 "explicit unix socket path\n", "SOCKET"},
+	{"format", 'f', 0, G_OPTION_ARG_STRING, &format,
+	 "output result by given FORMAT","FORMAT"},
+	{"version", 'v', 0, G_OPTION_ARG_NONE, &flag_version,
+	 "Display the version of gridinit_cmd", NULL},
+	{NULL}
 };
 
 static gint
@@ -553,7 +564,7 @@ command_kill(int argc, char **args)
 {
 	struct dump_as_is_arg_s dump_args = {};
 
-	int rc = send_commandv(dump_as, &dump_args, "stop", argc, args);
+	int rc = send_commandv(dump_as, &dump_args, "stop", argc, args); 
 	return !rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
@@ -641,75 +652,73 @@ struct command_s {
 	{ NULL, NULL }
 };
 
-static int
-main_options(int argc, char **args)
-{
-	int opt;
-
-	g_strlcpy(sock_path, GRIDINIT_SOCK_PATH, sizeof(sock_path));
-
-	while ((opt = getopt(argc, args, "chf:S:")) != -1) {
-		switch (opt) {
-			case 'c':
-				flag_color = TRUE;
-				break;
-			case 'S':
-				if (optarg)
-					g_strlcpy(sock_path, optarg, sizeof(sock_path));
-				break;
-			case 'h':
-				flag_help = TRUE;
-				break;
-			case 'f':
-				if (optarg)
-					g_strlcpy(format, optarg, sizeof(format));
-				break;
-		}
-	}
-
-	return optind;
-}
-
 static void
-help(char **args)
+help(void)
 {
 	close(2);
-	g_print("Usage: %s [-h|-c|-f FORMAT|-S SOCK]... (status{,2,3}|start|stop|reload|repair) [ID...]\n", args[0]);
-	g_print("\n OPTIONS:\n");
-	g_print("  -c        : coloured display\n");
-	g_print("  -h        : displays a little help section\n");
-	g_print("  -S SOCK   : explicit unix socket path\n");
-	g_print("  -f FORMAT : output result by json\n");
 	g_print("\n COMMANDS:\n");
-	g_print("  status*   : Displays the status of the given processes or groups\n");
-	g_print("  start     : Starts the given processes or groups, even if broken\n");
-	g_print("  kill      : Stops the given processes or groups, they won't be automatically\n");
-	g_print("              restarted even after a configuration reload\n");
-	g_print("  stop      : Calls 'kill' until the children exit\n");
-	g_print("  restart   : Restarts the given processes or groups\n");
-	g_print("  reload    : Reloads the configuration, stopping obsolete processes, starting\n");
-	g_print("              the newly discovered. Broken or stopped processes are not restarted\n");
-	g_print("  repair    : Removes the broken flag set on a process. Start must be called to\n");
-	g_print("              restart the process.\n");
+	g_print("  status* : Displays the status of the given processes or groups\n");
+	g_print("  start   : Starts the given processes or groups, even if broken\n");
+	g_print("  kill    : Stops the given processes or groups, they won't be automatically\n");
+	g_print("            restarted even after a configuration reload\n");
+	g_print("  stop    : Calls 'kill' until the children exit\n");
+	g_print("  restart : Restarts the given processes or groups\n");
+	g_print("  reload  : Reloads the configuration, stopping obsolete processes, starting\n");
+	g_print("            the newly discovered. Broken or stopped processes are not restarted\n");
+	g_print("  repair  : Removes the broken flag set on a process. Start must be called to\n");
+	g_print("            restart the process.\n");
 	g_print("with ID the key of a process, or '@GROUP', with GROUP the name of a process\n");
 	g_print("group\n");
 	close(1);
 	exit(0);
 }
 
+static int
+main_options(int argc, char **args)
+{
+	GError *error = NULL;
+	GOptionContext *context;
+
+	context = g_option_context_new("(status{,2,3}|start|stop|reload|repair) [ID...]\n");
+	g_option_context_add_main_entries(context, entries, NULL);
+	if (!g_option_context_parse(context, &argc, &args, &error)) {
+		g_print("option parsing failed: %s\n", error->message);
+		gchar *usage = g_option_context_get_help (context, TRUE, NULL);
+		g_print("%s", usage);
+		help();
+	}
+
+	return argc;
+}
+
+static void
+usage(void)
+{
+	GOptionContext *context;
+	context = g_option_context_new("(status{,2,3}|start|stop|reload|repair) [ID...]\n");
+	gchar *usage = g_option_context_get_help (context, TRUE, NULL);
+	g_print("%s", usage);
+	help();
+}
 int
 main(int argc, char ** args)
 {
 	struct command_s *cmd;
-	int opt_index;
+	int opt_index = 1;
+
+	if (argc == 1)
+		usage();
 
 	close(0);
-	opt_index = main_options(argc, args);
 
-	if (flag_help)
-		help(args);
-	if (opt_index >= argc)
-		help(args);
+	argc = main_options(argc, args);
+
+	if (flag_version) {
+		fprintf(stdout, "gridinit_cmd version: %s\n", API_VERSION);
+		close(1);
+		close(2);
+		return 0;
+	}
 
 	for (cmd=COMMANDS; cmd->name ;cmd++) {
 		if (0 == g_ascii_strcasecmp(cmd->name, args[opt_index])) {
@@ -719,9 +728,6 @@ main(int argc, char ** args)
 			return rc;
 		}
 	}
-
-	fprintf(stderr, "\n*** Invalid command %s ***\n\n", args[opt_index]);
-	help(args);
 
 	close(1);
 	close(2);
