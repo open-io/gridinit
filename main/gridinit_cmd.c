@@ -44,10 +44,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MEDIUM 1
 
 
-static gchar *sock_path;
+static gchar *sock_path = NULL;
 static gchar line[65536];
 static gboolean flag_color = FALSE;
-static gchar *format;
+static gchar *format = NULL;
 static gboolean flag_version = FALSE;
 #define BOOL(i) (i?1:0)
 
@@ -118,11 +118,11 @@ static struct keyword_set_s KEYWORDS_COLOR = {
 
 static GOptionEntry entries[] = {
 	{"color", 'c', 0, G_OPTION_ARG_NONE, &flag_color,
-	 "coloured display \n", NULL},
+	 "coloured display ", NULL},
 	{"sock-path", 'S', 0, G_OPTION_ARG_FILENAME, &sock_path,
-	 "explicit unix socket path\n", "SOCKET"},
+	 "explicit unix socket path", "SOCKET"},
 	{"format", 'f', 0, G_OPTION_ARG_STRING, &format,
-	 "output result by given FORMAT","FORMAT"},
+	 "output result by given FORMAT. Available FORMAT value are yaml, csv or json","FORMAT"},
 	{"version", 'v', 0, G_OPTION_ARG_NONE, &flag_version,
 	 "Display the version of gridinit_cmd", NULL},
 	{NULL}
@@ -678,6 +678,8 @@ main_options(int argc, char **args)
 {
 	GError *error = NULL;
 	GOptionContext *context;
+
+	sock_path = g_strdup(GRIDINIT_SOCK_PATH);
 
 	context = g_option_context_new("(status{,2,3}|start|stop|reload|repair) [ID...]\n");
 	g_option_context_add_main_entries(context, entries, NULL);

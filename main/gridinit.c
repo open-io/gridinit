@@ -112,10 +112,10 @@ static void servers_ensure(void);
 
 static GOptionEntry entries[] = {
 	{"daemonize", 'd', 0, G_OPTION_ARG_NONE, (gboolean *)&flag_daemon,
-	 "Detaches then daemonizes the gridinit \n", NULL},
+	 "Detaches then daemonizes the gridinit", NULL},
 	{"group", 'g', 0, G_OPTION_ARG_STRING_ARRAY, &groups_only_cli,
 	 "limits the services loading to those belonging to the specified"
-	 "group. This option can be repeated\n", "GROUP"},
+	 "group. This option can be repeated", "GROUP"},
 	{"quiet", 'q', 0, G_OPTION_ARG_NONE, (gboolean *)&flag_quiet,
 	 "quiet mode, suppress non-error output",NULL},
 	{"version", 'V', 0, G_OPTION_ARG_NONE, (gboolean *)&flag_version,
@@ -1794,6 +1794,8 @@ __parse_options(int argc, char ** args)
 		g_print("option parsing failed: %s\n", error_local->message);
 		gchar *usage = g_option_context_get_help (context, TRUE, NULL);
 		g_print("%s", usage);
+		exit(1);
+		return;
 	}
 
 	if (flag_more_verbose)
