@@ -93,12 +93,12 @@ static char *config_subdir = NULL;
 static char **groups_only_cli = NULL;
 static char **groups_only_cfg = NULL;
 
-static volatile int flag_help = 0;
-static volatile int flag_quiet = 0;
-static volatile int flag_daemon = 0;
-static volatile int flag_running = ~0;
-static volatile int flag_check_socket = 0;
-static volatile int flag_more_verbose = 0;
+static volatile gboolean flag_quiet = FALSE;
+static volatile gboolean flag_daemon = FALSE;
+static volatile gboolean flag_running = TRUE;
+static volatile gboolean flag_check_socket = FALSE;
+static volatile gboolean flag_more_verbose = FALSE;
+static volatile gboolean flag_version = FALSE;
 
 static volatile gint32 default_uid = -1;
 static volatile gint32 default_gid = -1;
@@ -111,6 +111,22 @@ static gboolean _cfg_reload(gboolean services_only, GError **err);
 
 static void servers_ensure(void);
 
+static GOptionEntry entries[] = {
+	{"daemonize", 'd', 0, G_OPTION_ARG_NONE, (gboolean *)&flag_daemon,
+	 "Detaches then daemonizes the gridinit \n", NULL},
+	{"group", 'g', 0, G_OPTION_ARG_STRING_ARRAY, &groups_only_cli,
+	 "limits the services loading to those belonging to the specified"
+	 "group. This option can be repeated\n", "GROUP"},
+	{"quiet", 'q', 0, G_OPTION_ARG_NONE, (gboolean *)&flag_quiet,
+	 "quiet mode, suppress non-error output",NULL},
+	{"version", 'V', 0, G_OPTION_ARG_NONE, (gboolean *)&flag_version,
+	 "Display the version of gridinit", NULL},
+	{"verbose", 'v', 0, G_OPTION_ARG_NONE, (gboolean *)&flag_more_verbose,
+	 "verbose output mode", NULL},
+	{"syslog", 's', 0, G_OPTION_ARG_STRING, &syslog_id,
+	 "enable logs using syslog with the given ID", "ID"},
+	{NULL}
+};
 
 /* ------------------------------------------------------------------------- */
 
@@ -974,22 +990,6 @@ signals_clean(void)
 
 /* Configuration ----------------------------------------------------------- */
 
-static void
-main_usage(void)
-{
-	if (flag_quiet)
-		return;
-	g_printerr("\n"
-		"Usage: %s [OPTIONS] ... CONFIG_PATH [LOG4C_PATH]\n"
-		" with OPTIONS:\n"
-		"    -d       : Detaches then daemonizes the gridinit\n"
-		"    -h       : displays this help section\n"
-		"    -g GROUP : limits the services loading to those belonging to\n"
-		"               the specified group. This option can be repeated.\n"
-		"    -q       : quiet mode, suppress non-error output\n"
-		"\n", g_get_prgname());
-}
-
 static gboolean
 _cfg_value_is_true(const gchar *val)
 {
@@ -1797,54 +1797,29 @@ logger_stderr(const gchar *log_domain, GLogLevelFlags log_level,
 static void
 __parse_options(int argc, char ** args)
 {
-	int c;
 	GError *error_local = NULL;
+	GOptionContext *context;
 
-	while (-1 != (c = getopt(argc, args, "vqhdg:s:"))) {
-		switch (c) {
-			case 'd':
-				flag_daemon = ~0;
-				break;
-			case 'h':
-				flag_help = ~0;
-				break;
-			case 'g':
-				if (!optarg) {
-					g_printerr("Expected argument to the '-%c' option\n", c);
-					exit(1);
-				}
-				_str_set_array(TRUE, &groups_only_cli, optarg);
-				break;
-			case 's':
-				if (!optarg) {
-					g_printerr("Expected argument to the '-%c' option\n", c);
-					exit(1);
-				}
-				g_strlcpy(syslog_id, optarg, sizeof(syslog_id));
-				break;
-			case 'v':
-				logger_verbose_default();
-				break;
-			case 'q':
-				flag_quiet = ~0;
-				logger_init_level(GRID_LOGLVL_ERROR);
-				break;
-			default:
-				if (!flag_quiet)
-					g_printerr("Unexpected option : %c\n", c);
-				exit(1);
-		}
+	context = g_option_context_new(" CONFIG_PATH [LOG4C_PATH]");
+	g_option_context_add_main_entries(context, entries, NULL);
+	if (!g_option_context_parse(context, &argc, &args, &error_local)) {
+		g_print("option parsing failed: %s\n", error_local->message);
+		gchar *usage = g_option_context_get_help (context, TRUE, NULL);
+		g_print("%s", usage);
 	}
 
-	if (flag_help) {
-		main_usage();
+	if (flag_more_verbose)
+		logger_verbose_default();
+
+	if (flag_version) {
+		fprintf(stdout, "gridinit version: %s\n", API_VERSION);
 		exit(0);
 		return;
 	}
-
 	/* check for additionnal arguments */
 	if (optind >= argc) {
-		main_usage();
+		gchar *usage = g_option_context_get_help (context, TRUE, NULL);
+		g_print("%s", usage);
 		exit(1);
 		return;
 	}
