@@ -24,8 +24,10 @@ parse_format(gchar *format)
 		return JSON;
 	if (g_strcmp0(format, "csv") == 0)
 		return CSV;
+	#if 0
 	if (g_strcmp0(format, "yaml") == 0)
 		return YAML;
+	#endif
 	else
 		return DEFAULT;
 }

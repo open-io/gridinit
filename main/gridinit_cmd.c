@@ -123,7 +123,7 @@ static GOptionEntry entries[] = {
 	 "explicit unix socket path", "SOCKET"},
 	{"format", 'f', 0, G_OPTION_ARG_STRING, &format,
 	 "output result by given FORMAT. Available FORMAT value are "
-	 "yaml, csv or json","FORMAT"},
+	 "csv or json","FORMAT"},
 	{"version", 'v', 0, G_OPTION_ARG_NONE, &flag_version,
 	 "Display the version of gridinit_cmd", NULL},
 	{NULL}
