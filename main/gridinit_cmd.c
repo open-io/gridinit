@@ -656,14 +656,6 @@ struct command_s {
 };
 
 static void
-help(void)
-{
-	
-	close(1);
-	exit(0);
-}
-
-static void
 usage(void)
 {
 	GOptionContext *context;

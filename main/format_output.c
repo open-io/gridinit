@@ -143,7 +143,7 @@ void
 status_body_json(gchar *fmt_line, int size)
 {
 	g_snprintf(fmt_line, size,
-			"{\n    \"key\":\"%%s\",\n    \"status\":\"%%s\","
+			"  {\n    \"key\":\"%%s\",\n    \"status\":\"%%s\","
 			"\n    \"pid\":\"%%d\",\n    \"#start\":\"%%d\","
 			"\n    \"#died\":\"%%d\",\n    \"csz\":\"%%ld\","
 			"\n    \"ssz\":\"%%ld\",\n    \"mfd\":\"%%ld\","
