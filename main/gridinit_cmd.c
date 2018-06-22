@@ -122,7 +122,8 @@ static GOptionEntry entries[] = {
 	{"sock-path", 'S', 0, G_OPTION_ARG_FILENAME, &sock_path,
 	 "explicit unix socket path", "SOCKET"},
 	{"format", 'f', 0, G_OPTION_ARG_STRING, &format,
-	 "output result by given FORMAT. Available FORMAT value are yaml, csv or json","FORMAT"},
+	 "output result by given FORMAT. Available FORMAT value are "
+	 "yaml, csv or json","FORMAT"},
 	{"version", 'v', 0, G_OPTION_ARG_NONE, &flag_version,
 	 "Display the version of gridinit_cmd", NULL},
 	{NULL}
@@ -267,12 +268,14 @@ dump_as(FILE *in_stream, void *udata)
 
 	kw = flag_color ? &KEYWORDS_COLOR : &KEYWORDS_NORMAL;
 
-	if(format_to_int(format) != -1)
+	FORMAT format_t = parse_format(format);
+	if(format_t != DEFAULT)
 		kw = &KEYWORDS_NORMAL;
 
 	dump_args = udata;
 
-	print_header(format);
+
+	print_header(format_t);
 
 	while (!feof(in_stream) && !ferror(in_stream)) {
 		bzero(line, sizeof(line));
@@ -289,11 +292,11 @@ dump_as(FILE *in_stream, void *udata)
 			gchar *status = (gchar *) (code==0 ? kw->done :
 						   (code==EALREADY?kw->already:kw->failed));
 			gchar *error = strerror(code);
-			print_body(format, status, start, error,first);
+			print_body(format_t, status, start, error,first);
 			first = FALSE;
 		}
 	}
-	print_footer(format);
+	print_footer(format_t);
 	fflush(stdout);
 }
 
@@ -396,15 +399,15 @@ command_status(int lvl, int argc, char **args)
 
 	GList *all_jobs = _fetch_services();
 	GList *jobs = _filter_services(all_jobs, args, counters);
-
+	FORMAT format_t = parse_format(format);
 	/* compute the max length of several variable field, for well aligned
 	 * columns on the output. */
 	const size_t maxkey = get_longest_key(jobs);
 	const size_t maxgroup = get_longest_group(jobs);
 
-	if (format_to_int(format) != -1) {
-		print_status_header(format);
-		get_line_format(format, fmt_line, sizeof(fmt_line));
+	if (format_t != DEFAULT) {
+		print_status_header(format_t);
+		get_line_format(format_t, fmt_line, sizeof(fmt_line));
 		goto print_lines;
 	}
 
@@ -448,7 +451,7 @@ command_status(int lvl, int argc, char **args)
 	struct keyword_set_s *kw;
 	kw = flag_color ? &KEYWORDS_COLOR : & KEYWORDS_NORMAL;
 
-	if (format_to_int(format) != -1)
+	if (format_t != DEFAULT)
 		kw = &KEYWORDS_NORMAL;
 
 	/* iterate on the lines */
@@ -473,8 +476,8 @@ command_status(int lvl, int argc, char **args)
 			count_broken ++;
 		count_all ++;
 		/* Print now! */
-		if (format_to_int(format) != -1) {
-			print_status_sep(format, count_all-1);
+		if (format_t != DEFAULT) {
+			print_status_sep(format_t, count_all-1);
 
 			fprintf(stdout, fmt_line, ci->key, str_status, ci->pid,
 				ci->counter_started, ci->counter_died,
@@ -503,8 +506,8 @@ command_status(int lvl, int argc, char **args)
 	end:;
 	}
 
-	if (format_to_int(format) != -1)
-		print_footer(format);
+	if (format_t != DEFAULT)
+		print_footer(format_t);
 	fflush(stdout);
 
 	/* If patterns have been specified, we must find items (the user
@@ -586,10 +589,10 @@ command_stop(int argc, char **args)
 		g_list_free(jobs);
 		return rc;
 	}
-
+	FORMAT format_t = parse_format(format);
 	while (!_all_down()) {
 		/* If standart output format*/
-		if (format_to_int(format) == -1)
+		if (format_t != DEFAULT)
 			g_print("# Stopping...\n");
 		int rc = command_kill(argc, args);
 		if (rc != 0)

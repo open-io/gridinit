@@ -17,17 +17,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <glib.h>
 #include "./format_output.h"
 
-int
-format_to_int(gchar *format)
+FORMAT
+parse_format(gchar *format)
 {
 	if (g_strcmp0(format, "json") == 0)
-		return 0;
+		return JSON;
 	if (g_strcmp0(format, "csv") == 0)
-		return 1;
+		return CSV;
 	if (g_strcmp0(format, "yaml") == 0)
-		return 2;
+		return YAML;
 	else
-		return -1;
+		return DEFAULT;
 }
 
 void
@@ -74,14 +74,14 @@ print_as_csv(gchar *status, gchar *start, gchar *error)
 
 
 void
-print_header(gchar *format)
+print_header(FORMAT format)
 {
-	switch (format_to_int(format)) {
-		case 0:
-		case 2:
+	switch (format) {
+		case JSON:
+		case YAML:
 			fprintf(stdout, "[\n");
 			break;
-		case 1:
+		case CSV:
 			fprintf(stdout, "status,start,error\n");
 			break;
 		default:
@@ -90,11 +90,11 @@ print_header(gchar *format)
 }
 
 void
-print_footer(gchar *format)
+print_footer(FORMAT format)
 {
-	switch (format_to_int(format)) {
-		case 0 :
-		case 2:
+	switch (format) {
+		case JSON:
+		case YAML:
 			fprintf(stdout, "\n]\n");
 			break;
 		default:
@@ -104,15 +104,15 @@ print_footer(gchar *format)
 }
 
 void
-print_body(gchar *format, gchar *status, gchar *start, gchar *error, gboolean first){
-	switch (format_to_int(format)) {
-		case 0:
+print_body(FORMAT format, gchar *status, gchar *start, gchar *error, gboolean first){
+	switch (format) {
+		case JSON:
 			print_as_json(status, start, error, first);
 			break;
-		case 1:
+		case CSV:
 			print_as_csv(status, start, error);
 			break;
-		case 2:
+		case YAML:
 			print_as_yaml(status, start, error, first);
 			break;
 		default:
@@ -121,14 +121,14 @@ print_body(gchar *format, gchar *status, gchar *start, gchar *error, gboolean fi
 }
 
 void
-print_status_header(gchar *format)
+print_status_header(FORMAT format)
 {
-	switch (format_to_int(format)) {
-		case 0:
-		case 2:
+	switch (format) {
+		case JSON:
+		case YAML:
 			fprintf(stdout, "[\n");
 			break;
-		case 1:
+		case CSV:
 			fprintf(stdout,
 				"key,status,pid,#start,#died,csz,ssz,mfd,since,group,cmd\n");
 			break;
@@ -170,11 +170,11 @@ status_body_csv(gchar *fmt_line, int size)
 }
 
 void
-print_status_sep(gchar *format, int count)
+print_status_sep(FORMAT format, int count)
 {
-	switch (format_to_int(format)) {
-		case 0:
-		case 2:
+	switch (format) {
+		case JSON:
+		case YAML:
 			if(count)
 				fprintf(stdout, ",\n");
 		default:
@@ -183,16 +183,16 @@ print_status_sep(gchar *format, int count)
 }
 
 void
-get_line_format(gchar *format, gchar *fmt_line, int size)
+get_line_format(FORMAT format, gchar *fmt_line, int size)
 {
-	switch (format_to_int(format)) {
-		case 0:
+	switch (format) {
+		case JSON:
 			status_body_json(fmt_line, size);
 			break;
-		case 1:
+		case CSV:
 			status_body_csv(fmt_line, size);
 			break;
-		case 2:
+		case YAML:
 			status_body_yaml(fmt_line, size);
 			break;
 		default:
