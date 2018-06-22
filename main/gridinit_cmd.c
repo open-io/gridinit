@@ -658,22 +658,34 @@ struct command_s {
 static void
 help(void)
 {
-	close(2);
-	g_print("\n COMMANDS:\n");
-	g_print("  status* : Displays the status of the given processes or groups\n");
-	g_print("  start   : Starts the given processes or groups, even if broken\n");
-	g_print("  kill    : Stops the given processes or groups, they won't be automatically\n");
-	g_print("            restarted even after a configuration reload\n");
-	g_print("  stop    : Calls 'kill' until the children exit\n");
-	g_print("  restart : Restarts the given processes or groups\n");
-	g_print("  reload  : Reloads the configuration, stopping obsolete processes, starting\n");
-	g_print("            the newly discovered. Broken or stopped processes are not restarted\n");
-	g_print("  repair  : Removes the broken flag set on a process. Start must be called to\n");
-	g_print("            restart the process.\n");
-	g_print("with ID the key of a process, or '@GROUP', with GROUP the name of a process\n");
-	g_print("group\n");
+	
 	close(1);
 	exit(0);
+}
+
+static void
+usage(void)
+{
+	GOptionContext *context;
+	gchar description[] =
+		"\n COMMANDS:\n"
+		"  status* : Displays the status of the given processes or groups\n"
+		"  start   : Starts the given processes or groups, even if broken\n"
+		"  kill    : Stops the given processes or groups, they won't be automatically\n"
+		"            restarted even after a configuration reload\n"
+		"  stop    : Calls 'kill' until the children exit\n"
+		"  restart : Restarts the given processes or groups\n"
+		"  reload  : Reloads the configuration, stopping obsolete processes, starting\n"
+		"            the newly discovered. Broken or stopped processes are not restarted\n"
+		"  repair  : Removes the broken flag set on a process. Start must be called to\n"
+		"            restart the process.\n"
+		"with ID the key of a process, or '@GROUP', with GROUP the name of a process\n"
+		"group\n";
+	context = g_option_context_new("(status{,2,3}|start|stop|reload|repair) [ID...]\n");
+	g_option_context_add_main_entries(context, entries, NULL);
+	g_option_context_set_summary(context, description);
+	gchar *usage = g_option_context_get_help (context, TRUE, NULL);
+	g_print("%s", usage);
 }
 
 static int
@@ -683,28 +695,16 @@ main_options(int argc, char **args)
 	GOptionContext *context;
 
 	sock_path = g_strdup(GRIDINIT_SOCK_PATH);
-
 	context = g_option_context_new("(status{,2,3}|start|stop|reload|repair) [ID...]\n");
 	g_option_context_add_main_entries(context, entries, NULL);
-	if (!g_option_context_parse(context, &argc, &args, &error)) {
+        if (!g_option_context_parse(context, &argc, &args, &error)) {
 		g_print("option parsing failed: %s\n", error->message);
-		gchar *usage = g_option_context_get_help (context, TRUE, NULL);
-		g_print("%s", usage);
-		help();
 	}
 
 	return argc;
 }
 
-static void
-usage(void)
-{
-	GOptionContext *context;
-	context = g_option_context_new("(status{,2,3}|start|stop|reload|repair) [ID...]\n");
-	gchar *usage = g_option_context_get_help (context, TRUE, NULL);
-	g_print("%s", usage);
-	help();
-}
+
 int
 main(int argc, char ** args)
 {
@@ -724,7 +724,12 @@ main(int argc, char ** args)
 		close(2);
 		return 0;
 	}
-
+	if (!args[opt_index]) {
+		usage();
+		close(1);
+		close(2);
+		return 1;
+	}
 	for (cmd=COMMANDS; cmd->name ;cmd++) {
 		if (0 == g_ascii_strcasecmp(cmd->name, args[opt_index])) {
 			int rc = cmd->action(argc-(opt_index+1), args+(opt_index+1));
@@ -733,7 +738,7 @@ main(int argc, char ** args)
 			return rc;
 		}
 	}
-
+	usage();
 	close(1);
 	close(2);
 	return 1;
