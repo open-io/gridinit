@@ -34,7 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
-
+#include "./format_output.h"
 #include <glib.h>
 
 #include "./gridinit_internals.h"
@@ -48,6 +48,7 @@ static gboolean flag_help = FALSE;
 static gchar sock_path[1024];
 static gchar line[65536];
 static gboolean flag_color = FALSE;
+static gchar format[256];
 
 #define BOOL(i) (i?1:0)
 
@@ -128,6 +129,7 @@ compare_child_info(gconstpointer p1, gconstpointer p2)
 static const char *
 get_child_status(struct child_info_s *ci, struct keyword_set_s *kw)
 {
+
 
 	if (ci->broken) {
 		return kw->broken;
@@ -244,16 +246,23 @@ read_services_list(FILE *in_stream)
 
 
 static void
-dump_as_is(FILE *in_stream, void *udata)
+dump_as(FILE *in_stream, void *udata)
 {
 	int code;
 	gchar *start;
+	gboolean first = TRUE;
 	struct dump_as_is_arg_s *dump_args;
 	struct keyword_set_s *kw;
-
+	FORMAT format_t = parse_format(format);
 	kw = flag_color ? &KEYWORDS_COLOR : &KEYWORDS_NORMAL;
 
+	if(format_t != DEFAULT)
+		kw = &KEYWORDS_NORMAL;
+
 	dump_args = udata;
+
+	print_header(format_t);
+
 	while (!feof(in_stream) && !ferror(in_stream)) {
 		bzero(line, sizeof(line));
 		if (NULL != fgets(line, sizeof(line), in_stream)) {
@@ -266,12 +275,14 @@ dump_as_is(FILE *in_stream, void *udata)
 				else
 					dump_args->count_errors ++;
 			}
-
-			fprintf(stdout, "%s\t%s\t%s\n",
-					(code==0 ? kw->done : (code==EALREADY?kw->already:kw->failed)),
-					start, strerror(code));
+			gchar *status = (gchar *) (code==0 ? kw->done :
+						   (code==EALREADY?kw->already:kw->failed));
+			gchar *error = strerror(code);
+			print_body(format_t, status, start, error,first);
+			first = FALSE;
 		}
 	}
+	print_footer(format_t);
 	fflush(stdout);
 }
 
@@ -374,11 +385,17 @@ command_status(int lvl, int argc, char **args)
 
 	GList *all_jobs = _fetch_services();
 	GList *jobs = _filter_services(all_jobs, args, counters);
-
+	FORMAT format_t = parse_format(format);
 	/* compute the max length of several variable field, for well aligned
 	 * columns on the output. */
 	const size_t maxkey = get_longest_key(jobs);
 	const size_t maxgroup = get_longest_group(jobs);
+
+	if (format_t != DEFAULT) {
+		print_status_header(format_t);
+		get_line_format(format_t, fmt_line, sizeof(fmt_line));
+		goto print_lines;
+	}
 
 	/* write the title */
 	switch (lvl) {
@@ -414,9 +431,14 @@ command_status(int lvl, int argc, char **args)
 		break;
 	}
 
-	int count_misses = 0, count_broken = 0, count_down = 0;
+ print_lines:;
+
+	int count_misses = 0, count_broken = 0, count_down = 0, count_all = 0;
 	struct keyword_set_s *kw;
 	kw = flag_color ? &KEYWORDS_COLOR : & KEYWORDS_NORMAL;
+
+	if (format_t != DEFAULT)
+		kw = &KEYWORDS_NORMAL;
 
 	/* iterate on the lines */
 	for (GList *l=jobs; l ;l=l->next) {
@@ -438,27 +460,40 @@ command_status(int lvl, int argc, char **args)
 			count_down ++;
 		if (str_status == kw->broken)
 			count_broken ++;
-
+		count_all ++;
 		/* Print now! */
-		switch (lvl) {
-		case 0:
-			fprintf(stdout, fmt_line, ci->key, str_status, ci->pid, ci->group);
-			break;
-		case 1:
-			fprintf(stdout, fmt_line,
-				ci->key, str_status, ci->pid,
+		if (format_t != DEFAULT) {
+			print_status_sep(format_t, count_all-1);
+
+			fprintf(stdout, fmt_line, ci->key, str_status, ci->pid,
 				ci->counter_started, ci->counter_died,
-				str_time, ci->group, ci->cmd);
-			break;
-		default:
-			fprintf(stdout, fmt_line,
-				ci->key, str_status, ci->pid,
-				ci->counter_started, ci->counter_died,
-				ci->rlimits.core_size, ci->rlimits.stack_size, ci->rlimits.nb_files,
-				str_time, ci->group, ci->cmd);
-			break;
+				ci->rlimits.core_size, ci->rlimits.stack_size,
+				ci->rlimits.nb_files, str_time, ci->group, ci->cmd);
+			goto end;
 		}
+		switch (lvl) {
+			case 0:
+				fprintf(stdout, fmt_line, ci->key, str_status, ci->pid, ci->group);
+				break;
+			case 1:
+				fprintf(stdout, fmt_line,
+					ci->key, str_status, ci->pid,
+					ci->counter_started, ci->counter_died,
+					str_time, ci->group, ci->cmd);
+				break;
+			default:
+				fprintf(stdout, fmt_line,
+					ci->key, str_status, ci->pid,
+					ci->counter_started, ci->counter_died,
+					ci->rlimits.core_size, ci->rlimits.stack_size, ci->rlimits.nb_files,
+					str_time, ci->group, ci->cmd);
+				break;
+		}
+	end:;
 	}
+
+	if (format_t != DEFAULT)
+		print_footer(format_t);
 	fflush(stdout);
 
 	/* If patterns have been specified, we must find items (the user
@@ -483,6 +518,7 @@ command_status(int lvl, int argc, char **args)
 	return rc;
 }
 
+
 static int
 command_status0(int argc, char **args)
 {
@@ -505,7 +541,8 @@ static int
 command_start(int argc, char **args)
 {
 	struct dump_as_is_arg_s dump_args = {};
-	int rc = send_commandv(dump_as_is, &dump_args, "start", argc, args);
+
+	int rc = send_commandv(dump_as, &dump_args, "start", argc, args);
 	return !rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
@@ -515,7 +552,8 @@ static int
 command_kill(int argc, char **args)
 {
 	struct dump_as_is_arg_s dump_args = {};
-	int rc = send_commandv(dump_as_is, &dump_args, "stop", argc, args);
+
+	int rc = send_commandv(dump_as, &dump_args, "stop", argc, args);
 	return !rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
@@ -539,7 +577,9 @@ command_stop(int argc, char **args)
 	}
 
 	while (!_all_down()) {
-		g_print("# Stopping...\n");
+		/* If standart output format*/
+		if (parse_format(format) != DEFAULT)
+			g_print("# Stopping...\n");
 		int rc = command_kill(argc, args);
 		if (rc != 0)
 			return rc;
@@ -552,7 +592,8 @@ static int
 command_restart(int argc, char **args)
 {
 	struct dump_as_is_arg_s dump_args = {};
-	int rc = send_commandv(dump_as_is, &dump_args, "restart", argc, args);
+
+	int rc = send_commandv(dump_as, &dump_args, "restart", argc, args);
 	return !rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
@@ -562,7 +603,8 @@ static int
 command_repair(int argc, char **args)
 {
 	struct dump_as_is_arg_s dump_args = {};
-	int rc = send_commandv(dump_as_is, &dump_args, "repair", argc, args);
+
+	int rc = send_commandv(dump_as, &dump_args, "repair", argc, args);
 	return !rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
@@ -573,7 +615,8 @@ command_reload(int argc, char **args)
 {
 	struct dump_as_is_arg_s dump_args = {};
 	(void) argc, (void) args;
-	int rc = send_commandv(dump_as_is, &dump_args, "reload", 0, (char*[]){NULL});
+
+	int rc = send_commandv(dump_as, &dump_args, "reload", 0, (char*[]){NULL});
 	return !rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
@@ -605,7 +648,7 @@ main_options(int argc, char **args)
 
 	g_strlcpy(sock_path, GRIDINIT_SOCK_PATH, sizeof(sock_path));
 
-	while ((opt = getopt(argc, args, "chS:")) != -1) {
+	while ((opt = getopt(argc, args, "chf:S:")) != -1) {
 		switch (opt) {
 			case 'c':
 				flag_color = TRUE;
@@ -617,6 +660,10 @@ main_options(int argc, char **args)
 			case 'h':
 				flag_help = TRUE;
 				break;
+			case 'f':
+				if (optarg)
+					g_strlcpy(format, optarg, sizeof(format));
+				break;
 		}
 	}
 
@@ -627,22 +674,23 @@ static void
 help(char **args)
 {
 	close(2);
-	g_print("Usage: %s [-h|-c|-S SOCK]... (status{,2,3}|start|stop|reload|repair) [ID...]\n", args[0]);
+	g_print("Usage: %s [-h|-c|-f FORMAT|-S SOCK]... (status{,2,3}|start|stop|reload|repair) [ID...]\n", args[0]);
 	g_print("\n OPTIONS:\n");
-	g_print("  -c      : coloured display\n");
-	g_print("  -h      : displays a little help section\n");
-	g_print("  -S SOCK : explicit unix socket path\n");
+	g_print("  -c        : coloured display\n");
+	g_print("  -h        : displays a little help section\n");
+	g_print("  -S SOCK   : explicit unix socket path\n");
+	g_print("  -f FORMAT : output result by json\n");
 	g_print("\n COMMANDS:\n");
-	g_print("  status* : Displays the status of the given processes or groups\n");
-	g_print("  start   : Starts the given processes or groups, even if broken\n");
-	g_print("  kill    : Stops the given processes or groups, they won't be automatically\n");
-	g_print("            restarted even after a configuration reload\n");
-	g_print("  stop    : Calls 'kill' until the children exit\n");
-	g_print("  restart : Restarts the given processes or groups\n");
-	g_print("  reload  : Reloads the configuration, stopping obsolete processes, starting\n");
-	g_print("            the newly discovered. Broken or stopped processes are not restarted\n");
-	g_print("  repair  : Removes the broken flag set on a process. Start must be called to\n");
-	g_print("            restart the process.\n");
+	g_print("  status*   : Displays the status of the given processes or groups\n");
+	g_print("  start     : Starts the given processes or groups, even if broken\n");
+	g_print("  kill      : Stops the given processes or groups, they won't be automatically\n");
+	g_print("              restarted even after a configuration reload\n");
+	g_print("  stop      : Calls 'kill' until the children exit\n");
+	g_print("  restart   : Restarts the given processes or groups\n");
+	g_print("  reload    : Reloads the configuration, stopping obsolete processes, starting\n");
+	g_print("              the newly discovered. Broken or stopped processes are not restarted\n");
+	g_print("  repair    : Removes the broken flag set on a process. Start must be called to\n");
+	g_print("              restart the process.\n");
 	g_print("with ID the key of a process, or '@GROUP', with GROUP the name of a process\n");
 	g_print("group\n");
 	close(1);
@@ -672,11 +720,10 @@ main(int argc, char ** args)
 		}
 	}
 
-	fprintf(stderr, "\n*** Invalid command ***\n\n");
+	fprintf(stderr, "\n*** Invalid command %s ***\n\n", args[opt_index]);
 	help(args);
 
 	close(1);
 	close(2);
 	return 1;
 }
-
