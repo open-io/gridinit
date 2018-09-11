@@ -96,6 +96,16 @@ struct keyword_set_s {
 	const gchar *up;
 };
 
+static struct keyword_set_s KEYWORDS_SHORT = {
+	"ALREADY",
+	"DONE",
+	"FAILED",
+	"BROKEN",
+	"DOWN",
+	"DISABLED",
+	"UP"
+};
+
 static struct keyword_set_s KEYWORDS_NORMAL = {
 	"ALREADY ",
 	"DONE    ",
@@ -275,16 +285,19 @@ dump_as_is(FILE *in_stream, void *udata)
 	gchar *start;
 	gboolean first = TRUE;
 	struct dump_as_is_arg_s *dump_args;
-	struct keyword_set_s *kw;
-
-	kw = flag_color ? &KEYWORDS_COLOR : &KEYWORDS_NORMAL;
 
 	FORMAT format_t = parse_format(format);
-	if(format_t != DEFAULT)
+
+	struct keyword_set_s *kw;
+	if (format_t != DEFAULT)
+		kw = &KEYWORDS_SHORT;
+	else if (flag_color)
+		kw = &KEYWORDS_COLOR;
+	else
 		kw = &KEYWORDS_NORMAL;
 
-	dump_args = udata;
 
+	dump_args = udata;
 
 	print_header(format_t);
 
@@ -459,10 +472,13 @@ command_status(int lvl, int argc, char **args)
  print_lines:;
 
 	int count_misses = 0, count_broken = 0, count_down = 0, count_all = 0;
-	struct keyword_set_s *kw;
-	kw = flag_color ? &KEYWORDS_COLOR : & KEYWORDS_NORMAL;
 
+	struct keyword_set_s *kw;
 	if (format_t != DEFAULT)
+		kw = &KEYWORDS_SHORT;
+	else if (flag_color)
+		kw = &KEYWORDS_COLOR;
+	else
 		kw = &KEYWORDS_NORMAL;
 
 	/* iterate on the lines */
