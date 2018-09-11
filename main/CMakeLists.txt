@@ -9,7 +9,6 @@ add_executable(gridinit
 		utils.c
 		cnx.c)
 target_link_libraries(gridinit
-		gridinit-utils
 		${GLIB2_LIBRARIES} ${LIBEVENT_LIBRARIES})
 
 add_executable(gridinit_cmd
