@@ -269,7 +269,7 @@ read_services_list(FILE *in_stream)
 
 
 static void
-dump_as(FILE *in_stream, void *udata)
+dump_as_is(FILE *in_stream, void *udata)
 {
 	int code;
 	gchar *start;
@@ -567,7 +567,7 @@ command_start(int argc, char **args)
 {
 	struct dump_as_is_arg_s dump_args = {};
 
-	int rc = send_commandv(dump_as, &dump_args, "start", argc, args);
+	int rc = send_commandv(dump_as_is, &dump_args, "start", argc, args);
 	return !rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
@@ -578,7 +578,7 @@ command_kill(int argc, char **args)
 {
 	struct dump_as_is_arg_s dump_args = {};
 
-	int rc = send_commandv(dump_as, &dump_args, "stop", argc, args);
+	int rc = send_commandv(dump_as_is, &dump_args, "stop", argc, args);
 	return !rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
@@ -618,7 +618,7 @@ command_restart(int argc, char **args)
 {
 	struct dump_as_is_arg_s dump_args = {};
 
-	int rc = send_commandv(dump_as, &dump_args, "restart", argc, args);
+	int rc = send_commandv(dump_as_is, &dump_args, "restart", argc, args);
 	return !rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
@@ -629,7 +629,7 @@ command_repair(int argc, char **args)
 {
 	struct dump_as_is_arg_s dump_args = {};
 
-	int rc = send_commandv(dump_as, &dump_args, "repair", argc, args);
+	int rc = send_commandv(dump_as_is, &dump_args, "repair", argc, args);
 	return !rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
@@ -641,7 +641,7 @@ command_reload(int argc, char **args)
 	struct dump_as_is_arg_s dump_args = {};
 	(void) argc, (void) args;
 
-	int rc = send_commandv(dump_as, &dump_args, "reload", 0, (char*[]){NULL});
+	int rc = send_commandv(dump_as_is, &dump_args, "reload", 0, (char*[]){NULL});
 	return !rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
