@@ -40,24 +40,24 @@ supervisor_rights_init(const char *user_name, const char *group_name, GError ** 
 
 	pwd = getpwnam(user_name);
 	if (pwd == NULL) {
-		*error = g_error_printf(GRIDINIT_DOMAIN, errno, "User [%s] not found in /etc/passwd", user_name);
+		*error = g_error_new(gq_log, errno, "User [%s] not found in /etc/passwd", user_name);
 		return FALSE;
 	}
 
 	grp = getgrnam(group_name);
 	if (grp == NULL) {
-		*error = g_error_printf(GRIDINIT_DOMAIN, errno, "Group [%s] not found in /etc/group", group_name);
+		*error = g_error_new(gq_log, errno, "Group [%s] not found in /etc/group", group_name);
 		return FALSE;
 	}
 
 	effective_gid = grp->gr_gid;
 	effective_uid = pwd->pw_uid;
 	NOTICE("rights_init : effective id set to %d:%d", effective_uid, effective_gid);
-	
+
 	real_gid = getuid();
 	real_uid = getgid();
 	NOTICE("rights_init : real id saved (%d:%d)", real_uid, real_gid);
-	
+
 	return TRUE;
 }
 

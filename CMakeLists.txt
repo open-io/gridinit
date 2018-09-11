@@ -77,27 +77,38 @@ else()
 	else()
 		set (LD_LIBDIR "lib")
 	endif()
-	MESSAGE("LD_LIBDIR guessed to ${LD_LIBDIR}")
 endif()
 
 
 find_package(PkgConfig)
 pkg_check_modules(GLIB2 REQUIRED glib-2.0 gthread-2.0 gmodule-2.0)
-pkg_check_modules(LIBEVENT REQUIRED libevent)
+pkg_check_modules(DILL REQUIRED libdill)
 
-### explicit plugin directory for alerting modules ###
-
-set(GRIDINIT_PLUGINS_DIRECTORY "${LD_LIBDIR}/gridinit")
-if(GRIDINIT_PLUGINS)
-	set(GRIDINIT_PLUGINS_DIRECTORY "${GRIDINIT_PLUGINS}")
-endif(GRIDINIT_PLUGINS)
 
 set(CMAKE_LIBRARY_PATH "")
 set(CMAKE_INCLUDE_PATH "")
-include_directories(AFTER ${GLIB2_INCLUDE_DIRS})
+include_directories(AFTER
+	${DILL_INCLUDE_DIRS}
+	${GLIB2_INCLUDE_DIRS})
 
 add_definitions(-DLOG_DOMAIN="gridinit")
-add_definitions(-DGRIDINIT_DOMAIN="gridinit")
 
-add_subdirectory(./main)
+include_directories(BEFORE ${CMAKE_SOURCE_DIR}/main)
 
+add_executable(gridinit
+		main/gridinit.c
+		main/children.c
+		main/limits.c
+		main/uid.c
+		main/utils.c)
+target_link_libraries(gridinit
+	${GLIB2_LIBRARIES} ${DILL_STATIC_LIBRARIES})
+
+add_executable(gridinit_cmd
+		main/gridinit_cmd.c
+		main/format_output.c
+		main/utils.c)
+target_link_libraries(gridinit_cmd ${GLIB2_LIBRARIES})
+
+install(TARGETS gridinit gridinit_cmd
+		RUNTIME DESTINATION bin)

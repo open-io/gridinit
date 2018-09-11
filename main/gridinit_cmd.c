@@ -27,9 +27,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
-#include "./format_output.h"
+#include <sys/un.h>
+
 #include <glib.h>
 
+#include "./format_output.h"
 #include "./gridinit_internals.h"
 
 #define MINI 0
@@ -148,6 +150,42 @@ static const gchar description[] =
 	"with ID the key of a process, or '@GROUP', with GROUP the name of a process\n"
 	"group\n";
 
+
+static int
+__open_unix_client(const char *path)
+{
+	int sock;
+	struct sockaddr_un local = {};
+
+	if (!path || strlen(path) >= sizeof(local.sun_path)) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	/* Create ressources to monitor */
+	sock = socket(PF_UNIX, SOCK_STREAM, 0);
+	if (sock < 0)
+		return -1;
+
+	/* Bind to file */
+	local.sun_family = AF_UNIX;
+	g_strlcpy(local.sun_path, path, sizeof(local.sun_path)-1);
+
+	if (-1 == connect(sock, (struct sockaddr *)&local, sizeof(local)))
+		goto label_error;
+
+	errno = 0;
+	return sock;
+
+label_error:
+	if (sock >= 0) {
+		typeof(errno) errsav;
+		errsav = errno;
+		close(sock);
+		errno = errsav;
+	}
+	return -1;
+}
 
 static gint
 compare_child_info(gconstpointer p1, gconstpointer p2)

@@ -130,8 +130,6 @@ struct child_s {
 
 static struct child_s SRV_BEACON = {};
 
-static supervisor_postfork_f *supervisor_cb_postfork = NULL;
-static void *supervisor_cb_postfork_udata = NULL;
 
 static struct child_s *
 supervisor_get_child(const gchar *key)
@@ -413,8 +411,6 @@ _child_start(struct child_s *sd, void *udata, supervisor_cb_f cb)
 	case 0: /* child */
 		setsid();
 		sd->pid = getpid();
-		if (supervisor_cb_postfork != NULL)
-			supervisor_cb_postfork(supervisor_cb_postfork_udata);
 		reset_sighandler();
 
 		/* change the rights before changing the working directory */
@@ -1172,12 +1168,5 @@ supervisor_children_set_delay_sigkill(const char *key, time_t delay)
 	}
 	sd->delay_before_KILL = delay;
 	return 0;
-}
-
-void
-supervisor_set_callback_postfork(supervisor_postfork_f *cb, void *udata)
-{
-	supervisor_cb_postfork_udata = udata;
-	supervisor_cb_postfork = cb;
 }
 

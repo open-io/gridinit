@@ -7,7 +7,7 @@ Gridinit is a tool used to manage non-daemon processes.
 ### Dependencies
 
 * cmake, make, gcc
-* libevent, libevent-devel
+* libdill
 * glib, glib-devel
 
 ### Compile-time configuration

@@ -80,10 +80,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 # define CFG_KEY_INHERIT "inherit_env"
 #endif
 
-int __open_unix_client(const char *path);
-
-/* Groups matching */
-
 gboolean gridinit_group_in_set(const gchar *group, const gchar *set);
 
 #endif
