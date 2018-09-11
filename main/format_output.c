@@ -24,10 +24,6 @@ parse_format(gchar *format)
 		return JSON;
 	if (g_strcmp0(format, "csv") == 0)
 		return CSV;
-	#if 0
-	if (g_strcmp0(format, "yaml") == 0)
-		return YAML;
-	#endif
 	else
 		return DEFAULT;
 }
@@ -50,25 +46,6 @@ print_as_json(gchar *status, gchar *start, gchar *error, gboolean first)
 }
 
 void
-print_as_yaml(gchar *status, gchar *start, gchar *error, gboolean first)
-{
-	gchar header[] = "  {\n";
-	gchar footer[] = "  }";
-	gchar tab[] = "    ";
-
-	if(!first)
-		fprintf(stdout, ",\n");
-
-	fprintf(stdout, "%s", header);
-	fprintf(stdout, "%sstatus: %s,\n", tab, status);
-	fprintf(stdout, "%sstart: %s,\n", tab, start);
-	fprintf(stdout, "%serror: %s\n", tab, error);
-	fprintf(stdout, "%s", footer);
-}
-
-
-
-void
 print_as_csv(gchar *status, gchar *start, gchar *error)
 {
 	fprintf(stdout, "%s,%s,%s\n", status, start, error);
@@ -80,7 +57,6 @@ print_header(FORMAT format)
 {
 	switch (format) {
 		case JSON:
-		case YAML:
 			fprintf(stdout, "[\n");
 			break;
 		case CSV:
@@ -96,7 +72,6 @@ print_footer(FORMAT format)
 {
 	switch (format) {
 		case JSON:
-		case YAML:
 			fprintf(stdout, "\n]\n");
 			break;
 		default:
@@ -106,16 +81,14 @@ print_footer(FORMAT format)
 }
 
 void
-print_body(FORMAT format, gchar *status, gchar *start, gchar *error, gboolean first){
+print_body(FORMAT format, gchar *status, gchar *start, gchar *error, gboolean first)
+{
 	switch (format) {
 		case JSON:
 			print_as_json(status, start, error, first);
 			break;
 		case CSV:
 			print_as_csv(status, start, error);
-			break;
-		case YAML:
-			print_as_yaml(status, start, error, first);
 			break;
 		default:
 			fprintf(stdout, "%s\t%s\t%s\n", status, start, error);
@@ -127,9 +100,6 @@ print_status_header(FORMAT format)
 {
 	switch (format) {
 		case JSON:
-		case YAML:
-			fprintf(stdout, "[\n");
-			break;
 		case CSV:
 			fprintf(stdout,
 				"key,status,pid,#start,#died,csz,ssz,mfd,since,group,cmd\n");
@@ -153,18 +123,6 @@ status_body_json(gchar *fmt_line, int size)
 
 
 void
-status_body_yaml(gchar *fmt_line, int size)
-{
-	g_snprintf(fmt_line, size,
-			"  {\n    key: %%s,\n    status: %%s,"
-			"\n    pid: %%d,\n    #start: %%d,"
-			"\n    #died: %%d,\n    csz: %%ld,"
-			"\n    ssz: %%ld,\n    mfd: %%ld,"
-			"\n    since: %%s,\n    group: %%s,"
-			"\n    cmd: %%s\n  }");
-}
-
-void
 status_body_csv(gchar *fmt_line, int size)
 {
 	g_snprintf(fmt_line, size,
@@ -176,7 +134,6 @@ print_status_sep(FORMAT format, int count)
 {
 	switch (format) {
 		case JSON:
-		case YAML:
 			if(count)
 				fprintf(stdout, ",\n");
 		default:
@@ -193,9 +150,6 @@ get_line_format(FORMAT format, gchar *fmt_line, int size)
 			break;
 		case CSV:
 			status_body_csv(fmt_line, size);
-			break;
-		case YAML:
-			status_body_yaml(fmt_line, size);
 			break;
 		default:
 			break;

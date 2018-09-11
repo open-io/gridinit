@@ -19,18 +19,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 # include <glib.h>
 
 typedef enum FORMAT FORMAT;
-enum FORMAT {CSV, JSON, YAML, DEFAULT};
+enum FORMAT {DEFAULT = 0, CSV = 1, JSON = 2};
 
 FORMAT parse_format(gchar *format);
 void print_as_json(gchar *status, gchar *start, char *error, gboolean first);
-void print_as_yaml(gchar *status, gchar *start, char *error, gboolean first);
 void print_as_csv(gchar *status, gchar *start, char *error);
 void print_header(FORMAT format);
 void print_footer(FORMAT format);
 void print_body(FORMAT format, gchar *status, gchar *start, gchar *error, gboolean first);
 void print_status_header(FORMAT format);
 void status_body_json(gchar *fmt_line, int size);
-void status_body_yaml(gchar *fmt_line, int size);
 void status_body_csv(gchar *fmt_line, int size);
 void print_status_sep(FORMAT format, int count);
 void get_line_format(FORMAT format, gchar *fmt_line, int size);
