@@ -1,7 +1,7 @@
 /*
 gridinit, a monitor for non-daemon processes.
 Copyright (C) 2013 AtoS Worldline, original work aside of Redcurrant
-Copyright (C) 2015 OpenIO, modified for OpenIO Software Defined Storage
+Copyright (C) 2015-2018 OpenIO SAS
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
@@ -80,19 +80,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 # define CFG_KEY_INHERIT "inherit_env"
 #endif
 
-int __open_unix_server(const char *path);
-
 int __open_unix_client(const char *path);
-
-int __open_inet_server(const char *url);
-
-/* Alerting */
-
-gboolean gridinit_alerting_configure(const gchar *path, const gchar *symbol, GHashTable *ht, GError **err);
-
-void gridinit_alerting_send(int event, const char *msg);
-
-void gridinit_alerting_close(void);
 
 /* Groups matching */
 

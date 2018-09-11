@@ -1,7 +1,7 @@
 /*
 gridinit-utils, a helper library for gridinit.
 Copyright (C) 2013 AtoS Worldline, original work aside of Redcurrant
-Copyright (C) 2015 OpenIO, modified for OpenIO Software Defined Storage
+Copyright (C) 2015-2018 OpenIO SAS
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
@@ -17,19 +17,14 @@ You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifdef HAVE_CONFIG_H
-# include "../config.h"
-#endif
-
-#include "./gridinit-utils.h"
-#include "./gridinit-internals.h"
-
 #include <string.h>
 #include <errno.h>
 #include <stdint.h>
 #include <sys/types.h>
 #include <sys/resource.h>
 #include <unistd.h>
+
+#include "./gridinit-utils.h"
 
 static const char*
 get_rlimit_name(enum supervisor_limit_e what)

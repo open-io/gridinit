@@ -1,7 +1,7 @@
 /*
 gridinit, a monitor for non-daemon processes.
 Copyright (C) 2013 AtoS Worldline, original work aside of Redcurrant
-Copyright (C) 2015 OpenIO, modified for OpenIO Software Defined Storage
+Copyright (C) 2015-2018 OpenIO SAS
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
@@ -17,13 +17,6 @@ You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifdef HAVE_CONFIG_H
-# include "../config.h"
-#endif
-#ifndef LOG_DOMAIN
-# define LOG_DOMAIN "gridinit_cmd"
-#endif
-
 #include <stdlib.h>
 #include <string.h>
 #include <getopt.h>
@@ -38,7 +31,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <glib.h>
 
 #include "./gridinit_internals.h"
-#include "../lib/gridinit-internals.h"
 
 #define MINI 0
 #define MEDIUM 1

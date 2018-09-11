@@ -96,6 +96,8 @@ set(CMAKE_LIBRARY_PATH "")
 set(CMAKE_INCLUDE_PATH "")
 include_directories(AFTER ${GLIB2_INCLUDE_DIRS})
 
-add_subdirectory(./lib)
+add_definitions(-DLOG_DOMAIN="gridinit")
+add_definitions(-DGRIDINIT_DOMAIN="gridinit")
+
 add_subdirectory(./main)
 

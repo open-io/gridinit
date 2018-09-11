@@ -1,7 +1,7 @@
 /*
 gridinit-utils, a helper library for gridinit.
 Copyright (C) 2013 AtoS Worldline, original work aside of Redcurrant
-Copyright (C) 2015 OpenIO, modified for OpenIO Software Defined Storage
+Copyright (C) 2015-2018 OpenIO SAS
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
@@ -31,6 +31,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 # endif
 # include <sys/types.h>
 # include <unistd.h>
+
+# define GRID_LOGLVL_TRACE  (32 << G_LOG_LEVEL_USER_SHIFT)
+# define GRID_LOGLVL_DEBUG  (16 << G_LOG_LEVEL_USER_SHIFT)
+# define GRID_LOGLVL_INFO   (8  << G_LOG_LEVEL_USER_SHIFT)
+# define GRID_LOGLVL_NOTICE (4  << G_LOG_LEVEL_USER_SHIFT)
+# define GRID_LOGLVL_WARN   (2  << G_LOG_LEVEL_USER_SHIFT)
+# define GRID_LOGLVL_ERROR  (1  << G_LOG_LEVEL_USER_SHIFT)
+
+# define FATAL(Format,...)  g_log(GRIDINIT_DOMAIN, GRID_LOGLVL_ERROR,  Format, ##__VA_ARGS__)
+# define ALERT(Format,...)  g_log(GRIDINIT_DOMAIN, GRID_LOGLVL_ERROR,  Format, ##__VA_ARGS__)
+# define CRIT(Format,...)   g_log(GRIDINIT_DOMAIN, GRID_LOGLVL_ERROR,  Format, ##__VA_ARGS__)
+# define ERROR(Format,...)  g_log(GRIDINIT_DOMAIN, GRID_LOGLVL_ERROR,  Format, ##__VA_ARGS__)
+# define WARN(Format,...)   g_log(GRIDINIT_DOMAIN, GRID_LOGLVL_WARN,   Format, ##__VA_ARGS__)
+# define NOTICE(Format,...) g_log(GRIDINIT_DOMAIN, GRID_LOGLVL_NOTICE, Format, ##__VA_ARGS__)
+# define INFO(Format,...)   g_log(GRIDINIT_DOMAIN, GRID_LOGLVL_INFO,   Format, ##__VA_ARGS__)
+# define DEBUG(Format,...)  g_log(GRIDINIT_DOMAIN, GRID_LOGLVL_DEBUG,  Format, ##__VA_ARGS__)
+# define TRACE(Format,...)  g_log(GRIDINIT_DOMAIN, GRID_LOGLVL_TRACE,  Format, ##__VA_ARGS__)
+
+GError* g_error_printf(const char *dom, int code, const char *fmt, ...);
 
 extern time_t supervisor_default_delay_KILL;
 
@@ -152,10 +171,6 @@ int supervisor_children_get_info(const gchar *key, struct child_info_s *ci);
 int supervisor_children_set_ids(const gchar *key, gint32 uid, gint32 gid);
 
 int supervisor_children_set_delay_sigkill(const char *key, time_t delay);
-
-/* Fork and pipe ----------------------------------------------------------- */
-
-int command_get_pipe(const gchar *str_cmd);
 
 /* Privileges -------------------------------------------------------------- */
 

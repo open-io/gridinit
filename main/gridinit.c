@@ -1,7 +1,7 @@
 /*
 gridinit, a monitor for non-daemon processes.
 Copyright (C) 2013 AtoS Worldline, original work aside of Redcurrant
-Copyright (C) 2015 OpenIO, modified for OpenIO Software Defined Storage
+Copyright (C) 2015-2018 OpenIO SAS
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
@@ -16,13 +16,6 @@ GNU Affero General Public License for more details.
 You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-
-#ifdef HAVE_CONFIG_H
-# include "../config.h"
-#endif
-#ifndef LOG_DOMAIN
-# define LOG_DOMAIN "gridinit.main"
-#endif
 
 #include <stdlib.h>
 #include <fcntl.h>
@@ -51,8 +44,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <gridinit-utils.h>
 #include "./gridinit_internals.h"
-#include "./gridinit_alerts.h"
-#include "../lib/gridinit-internals.h"
 
 #define USERFLAG_PROCESS_DIED      0x00000002
 #define USERFLAG_PROCESS_RESTARTED 0x00000004
@@ -107,8 +98,6 @@ static volatile gboolean inherit_env = 0;
 static GHashTable *default_env = NULL;
 
 static gboolean _cfg_reload(gboolean services_only, GError **err);
-
-static void servers_ensure(void);
 
 static GOptionEntry entries[] = {
 	{"daemonize", 'd', 0, G_OPTION_ARG_NONE, (gboolean *)&flag_daemon,
@@ -232,20 +221,17 @@ static void
 alert_send_deferred(void *udata, struct child_info_s *ci)
 {
 	(void) udata;
-	gchar buff[1024];
 
 	/* Handle the alerting of broken services */
 	if ((ci->user_flags & USERFLAG_PROCESS_DIED) && ci->broken) {
 		supervisor_children_del_user_flags(ci->key, USERFLAG_PROCESS_DIED);
-		g_snprintf(buff, sizeof(buff), "Process broken [%s] %s", ci->key, ci->cmd);
-		gridinit_alerting_send(GRIDINIT_EVENT_BROKEN, buff);
+		ERROR("Process broken [%s] %s", ci->key, ci->cmd);
 	}
 
 	/* Handle the alerting of successfully restarted services */
 	if (!(ci->user_flags & USERFLAG_PROCESS_DIED) && (ci->user_flags & USERFLAG_PROCESS_RESTARTED)) {
 		supervisor_children_del_user_flags(ci->key, USERFLAG_PROCESS_RESTARTED);
-		g_snprintf(buff, sizeof(buff), "Process restarted [%s] %s", ci->key, ci->cmd);
-		gridinit_alerting_send(GRIDINIT_EVENT_RESTARTED, buff);
+		NOTICE("Process restarted [%s] %s", ci->key, ci->cmd);
 	}
 }
 
@@ -544,9 +530,7 @@ supervisor_signal_handler(int s, short flags, void *udata)
 	case SIGUSR1:
 		flag_more_verbose = ~0;
 		return;
-	case SIGUSR2:
-		flag_check_socket = ~0;
-		return;
+	case SIGUSR2: /* ignored */
 	case SIGPIPE: /* ignored */
 		return;
 	case SIGINT:
@@ -864,6 +848,57 @@ servers_save_fd(int fd, const char *url)
 	return TRUE;
 }
 
+static int
+__open_unix_server(const char *path)
+{
+	struct sockaddr_un local = {};
+
+	if (!path || strlen(path) >= sizeof(local.sun_path)) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	/* Create ressources to monitor */
+#ifdef SOCK_CLOEXEC
+# define SOCK_FLAGS SOCK_CLOEXEC
+#else
+# define SOCK_FLAGS 0
+#endif
+
+	int sock = socket(PF_UNIX, SOCK_STREAM | SOCK_FLAGS, 0);
+	if (sock < 0)
+		return -1;
+
+#ifndef SOCK_CLOEXEC
+# ifdef FD_CLOEXEC
+	(void) fcntl(sock, F_SETFD, fcntl(sock, F_GETFD)|FD_CLOEXEC);
+# endif
+#endif
+
+	/* Bind to file */
+	local.sun_family = AF_UNIX;
+	g_strlcpy(local.sun_path, path, sizeof(local.sun_path)-1);
+
+	if (-1 == bind(sock, (struct sockaddr *)&local, sizeof(local)))
+		goto label_error;
+
+	/* Listen on that socket */
+	if (-1 == listen(sock, 65536))
+		goto label_error;
+
+	errno = 0;
+	return sock;
+
+label_error:
+	if (sock >= 0) {
+		typeof(errno) errsav;
+		errsav = errno;
+		close(sock);
+		errno = errsav;
+	}
+	return -1;
+}
+
 /**
  * Opens a UNIX server socket then manage a server based on it
  */
@@ -917,42 +952,6 @@ servers_clean(void)
 
 	g_list_free(list_of_servers);
 	list_of_servers = NULL;
-}
-
-/**
- * Reopens all the UNIX server sockets bond on paths that changed.
- */
-static void
-servers_ensure(void)
-{
-	GList *l;
-
-	flag_check_socket = 0;
-	TRACE("About to ensure the server sockets");
-
-	for (l=list_of_servers; l ; l=l->next) {
-		struct server_sock_s *p_server = l->data;
-
-		NOTICE("Ensuring socket fd=%d bond to [%s]", p_server->fd, p_server->url);
-
-		if (servers_is_unix(p_server) && !servers_is_the_same(p_server)) {
-
-			/* close */
-			servers_unmonitor_one(p_server);
-
-			/* reopen */
-			p_server->fd = __open_unix_server(p_server->url);
-			if (p_server->fd < 0) {
-				WARN("unix: failed to reopen a server bond to [%s] : %s",
-						p_server->url, strerror(errno));
-			}
-			else if (!servers_monitor_one(p_server)) {
-				WARN("unix: failed to monitor a server bond to [%s] : %s",
-						p_server->url, strerror(errno));
-				servers_unmonitor_one(p_server);
-			}
-		}
-	}
 }
 
 /* Signals management ------------------------------------------------------ */
@@ -1320,60 +1319,6 @@ label_exit:
 }
 
 static gboolean
-_cfg_section_alert(GKeyFile *kf, const gchar *section, GError **err)
-{
-	gchar cfg_plugin[1024], cfg_symbol[128];
-	gchar **p_key, **keys;
-
-	bzero(cfg_plugin, sizeof(cfg_plugin));
-	bzero(cfg_symbol, sizeof(cfg_symbol));
-
-	keys = g_key_file_get_keys(kf, section, NULL, err);
-	if (!keys)
-		return FALSE;
-
-	for (p_key=keys; *p_key ;p_key++) {
-		gchar *str;
-
-		str = g_key_file_get_string(kf, section, *p_key, NULL);
-
-		if (!g_ascii_strcasecmp(*p_key, "plugin")) {
-			if (*cfg_plugin)
-				NOTICE("Alerting plugin already known : plugin=[%s]", cfg_plugin);
-			else
-				g_strlcpy(cfg_plugin, str, sizeof(cfg_plugin)-1);
-		}
-		else if (!g_ascii_strcasecmp(*p_key, "symbol")) {
-			if (*cfg_symbol)
-				NOTICE("Alerting symbol already known : symbol=[%s]", cfg_symbol);
-			else
-				g_strlcpy(cfg_symbol, str, sizeof(cfg_symbol)-1);
-		}
-
-		g_free(str);
-	}
-
-	g_strfreev(keys);
-
-	if (!*cfg_symbol || !*cfg_plugin) {
-		WARN("Missing configuration keys : both \"plugin\" and \"symbol\""
-			" must be present in section [%s]", section);
-		return FALSE;
-	}
-	else {
-		GHashTable *ht_params;
-		gboolean rc;
-		ht_params = _cfg_extract_parameters(kf, section, "config.", err);
-		rc = gridinit_alerting_configure(cfg_plugin, cfg_symbol, ht_params, err);
-		g_hash_table_destroy(ht_params);
-		if (!rc)
-			return FALSE;
-	}
-
-	return TRUE;
-}
-
-static gboolean
 _cfg_section_default(GKeyFile *kf, const gchar *section, GError **err)
 {
 	gchar buf_user[256]="", buf_group[256]="";
@@ -1534,13 +1479,6 @@ _cfg_reload_file(GKeyFile *kf, gboolean services_only, GError **err)
 			INFO("reconfigure : loading main parameters from section [%s]", *p_group);
 			if (!_cfg_section_default(kf, *p_group, err)) {
 				WARN("invalid default section");
-				goto label_exit;
-			}
-		}
-		else if (!services_only && !g_ascii_strcasecmp(*p_group, "alerts")) {
-			INFO("reconfigure : loading alerting parameters from section [%s]", *p_group);
-			if (!_cfg_section_alert(kf, *p_group, err)) {
-				WARN("Invalid alerts section");
 				goto label_exit;
 			}
 		}
@@ -1984,8 +1922,6 @@ main(int argc, char ** args)
 
 		if (!flag_running)
 			break;
-		if (flag_check_socket)
-			servers_ensure();
 		if (flag_more_verbose) {
 			NOTICE("Increasing verbosity for 15 minutes");
 			logger_verbose();
@@ -2036,7 +1972,6 @@ label_exit:
 	signals_clean();
 	g_free(config_path);
 
-	gridinit_alerting_close();
 	closelog();
 	return rc;
 }

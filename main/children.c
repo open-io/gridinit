@@ -1,7 +1,7 @@
 /*
 gridinit-utils, a helper library for gridinit.
 Copyright (C) 2013 AtoS Worldline, original work aside of Redcurrant
-Copyright (C) 2015 OpenIO, modified for OpenIO Software Defined Storage
+Copyright (C) 2015-2018 OpenIO SAS
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
@@ -17,10 +17,6 @@ You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifdef HAVE_CONFIG_H
-# include "../config.h"
-#endif
-
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
@@ -33,7 +29,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <glib.h>
 
 #include "./gridinit-utils.h"
-#include "./gridinit-internals.h"
 
 time_t supervisor_default_delay_KILL = SUPERVISOR_DEFAULT_TIMEOUT_KILL;
 
@@ -666,29 +661,48 @@ supervisor_children_disable_obsolete(void)
 	return count;
 }
 
+static inline int
+_is_dead(const pid_t needle, pid_t *pincushion, register const int max)
+{
+	for (register int i=0; i<max ;++i) {
+		if (needle == pincushion[i])
+			return 1;
+	}
+	return 0;
+}
+
 guint
 supervisor_children_catharsis(void *udata, supervisor_cb_f cb)
 {
-	pid_t pid_dead;
-	guint count;
 	struct child_s *sd;
-	struct child_info_s ci;
+	guint count = 0;
+	int pids_idx = 0;
+	pid_t pid;
+	pid_t pids[1024];
 
-	count = 0;
-	while ((pid_dead = waitpid(-1, NULL, WNOHANG)) > 0) {
-		FOREACH_CHILD(sd) {
-			if (sd->pid == pid_dead) {
-				count++;
-				_child_notify_death(sd);
-				if (cb) {
-					_child_get_info(sd, &ci);
-					cb(udata, &ci);
-				}
-				sd->pid = -1;
-				break;
-			}
-		}
+	g_assert_nonnull(cb);
+
+	/* Consume a batch of dead children */
+	while (pids_idx < 1024 && (pid = waitpid(-1, NULL, WNOHANG)) > 0)
+		pids[pids_idx++] = pid;
+	if (!pids_idx)
+		return 0;
+
+	/* Locate the concerned structures, for each dead child */
+	FOREACH_CHILD(sd) {
+		if (!_is_dead(sd->pid, pids, pids_idx))
+			continue;
+
+		count++;
+		_child_notify_death(sd);
+
+		struct child_info_s ci = {};
+		_child_get_info(sd, &ci);
+		cb(udata, &ci);
+
+		sd->pid = -1;
 	}
+
 	return count;
 }
 
