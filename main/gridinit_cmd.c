@@ -129,6 +129,24 @@ static GOptionEntry entries[] = {
 	{NULL}
 };
 
+static const gchar options[] = "(status{,2,3}|start|stop|reload|repair) [ID...]";
+
+static const gchar description[] =
+	"\n COMMANDS:\n"
+	"  status* : Displays the status of the given processes or groups\n"
+	"  start   : Starts the given processes or groups, even if broken\n"
+	"  kill    : Stops the given processes or groups, they won't be automatically\n"
+	"            restarted even after a configuration reload\n"
+	"  stop    : Calls 'kill' until the children exit\n"
+	"  restart : Restarts the given processes or groups\n"
+	"  reload  : Reloads the configuration, stopping obsolete processes, starting\n"
+	"            the newly discovered. Broken or stopped processes are not restarted\n"
+	"  repair  : Removes the broken flag set on a process. Start must be called to\n"
+	"            restart the process.\n"
+	"with ID the key of a process, or '@GROUP', with GROUP the name of a process\n"
+	"group\n";
+
+
 static gint
 compare_child_info(gconstpointer p1, gconstpointer p2)
 {
@@ -141,18 +159,12 @@ compare_child_info(gconstpointer p1, gconstpointer p2)
 static const char *
 get_child_status(struct child_info_s *ci, struct keyword_set_s *kw)
 {
-
-
-	if (ci->broken) {
+	if (ci->broken)
 		return kw->broken;
-	}
-	if (!ci->enabled) {
+	if (!ci->enabled)
 		return kw->disabled;
-	}
-	if (ci->pid <= 0) {
+	if (ci->pid <= 0)
 		return kw->down;
-	}
-
 	return kw->up;
 }
 
@@ -160,8 +172,7 @@ static size_t
 get_longest_group(GList *all_jobs)
 {
 	size_t maxlen = 5;
-	GList *l;
-	for (l=all_jobs; l ;l=l->next) {
+	for (GList *l=all_jobs; l ;l=l->next) {
 		struct child_info_s *ci = l->data;
 		size_t len = strlen(ci->group);
 		if (len > maxlen)
@@ -567,7 +578,7 @@ command_kill(int argc, char **args)
 {
 	struct dump_as_is_arg_s dump_args = {};
 
-	int rc = send_commandv(dump_as, &dump_args, "stop", argc, args); 
+	int rc = send_commandv(dump_as, &dump_args, "stop", argc, args);
 	return !rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
@@ -658,80 +669,53 @@ struct command_s {
 static void
 usage(void)
 {
-	GOptionContext *context;
-	gchar description[] =
-		"\n COMMANDS:\n"
-		"  status* : Displays the status of the given processes or groups\n"
-		"  start   : Starts the given processes or groups, even if broken\n"
-		"  kill    : Stops the given processes or groups, they won't be automatically\n"
-		"            restarted even after a configuration reload\n"
-		"  stop    : Calls 'kill' until the children exit\n"
-		"  restart : Restarts the given processes or groups\n"
-		"  reload  : Reloads the configuration, stopping obsolete processes, starting\n"
-		"            the newly discovered. Broken or stopped processes are not restarted\n"
-		"  repair  : Removes the broken flag set on a process. Start must be called to\n"
-		"            restart the process.\n"
-		"with ID the key of a process, or '@GROUP', with GROUP the name of a process\n"
-		"group\n";
-	context = g_option_context_new("(status{,2,3}|start|stop|reload|repair) [ID...]\n");
+	GOptionContext *context = g_option_context_new(options);
 	g_option_context_add_main_entries(context, entries, NULL);
 	g_option_context_set_summary(context, description);
-	gchar *usage = g_option_context_get_help (context, TRUE, NULL);
-	g_print("%s", usage);
+	gchar *str_usage = g_option_context_get_help (context, TRUE, NULL);
+	g_printerr("%s", str_usage);
+	g_free(str_usage);
 }
 
-static int
-main_options(int argc, char **args)
+static gboolean
+main_options(int *argc, char ***args)
 {
-	GError *error = NULL;
-	GOptionContext *context;
-
 	sock_path = g_strdup(GRIDINIT_SOCK_PATH);
-	context = g_option_context_new("(status{,2,3}|start|stop|reload|repair) [ID...]\n");
-	g_option_context_add_main_entries(context, entries, NULL);
-        if (!g_option_context_parse(context, &argc, &args, &error)) {
-		g_print("option parsing failed: %s\n", error->message);
-	}
 
-	return argc;
+	GError *error = NULL;
+	GOptionContext *context = g_option_context_new(options);
+	g_option_context_add_main_entries(context, entries, NULL);
+	g_option_context_set_summary(context, description);
+	return g_option_context_parse(context, argc, args, &error);
 }
 
 
 int
 main(int argc, char ** args)
 {
-	struct command_s *cmd;
-	int opt_index = 1;
-
-	if (argc == 1)
-		usage();
-
 	close(0);
 
-	argc = main_options(argc, args);
+	if (!main_options(&argc, &args)) {
+		usage();
+		return 1;
+	}
 
 	if (flag_version) {
 		fprintf(stdout, "gridinit_cmd version: %s\n", API_VERSION);
-		close(1);
-		close(2);
 		return 0;
 	}
+
+	int opt_index = 1;
 	if (!args[opt_index]) {
 		usage();
-		close(1);
-		close(2);
-		return 1;
+		return 2;
 	}
-	for (cmd=COMMANDS; cmd->name ;cmd++) {
-		if (0 == g_ascii_strcasecmp(cmd->name, args[opt_index])) {
-			int rc = cmd->action(argc-(opt_index+1), args+(opt_index+1));
-			close(1);
-			close(2);
-			return rc;
-		}
+
+	for (struct command_s *cmd=COMMANDS; cmd->name ;cmd++) {
+		if (0 == g_ascii_strcasecmp(cmd->name, args[opt_index]))
+			return cmd->action(argc-(opt_index+1), args+(opt_index+1));
 	}
+
 	usage();
-	close(1);
-	close(2);
 	return 1;
 }
