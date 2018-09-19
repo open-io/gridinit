@@ -18,15 +18,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <stdlib.h>
-#include <string.h>
+#include <stdio.h>
 #include <getopt.h>
 #include <strings.h>
-#include <stdio.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <unistd.h>
 #include <sys/socket.h>
-#include <sys/stat.h>
 #include <sys/un.h>
 
 #include <glib.h>

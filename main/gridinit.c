@@ -18,28 +18,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <stdlib.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <string.h>
-#include <strings.h>
-#include <math.h>
+#include <stdio.h>
 #include <signal.h>
-#include <unistd.h>
 #include <pwd.h>
 #include <grp.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/types.h>
-#include <sys/stat.h>
 #include <sys/un.h>
 
 #include <syslog.h>
 #include <glob.h>
 
-#include <event.h>
 #include <glib.h>
 #include <libdill.h>
 
