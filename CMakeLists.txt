@@ -82,13 +82,22 @@ endif()
 
 find_package(PkgConfig)
 pkg_check_modules(GLIB2 REQUIRED glib-2.0 gthread-2.0 gmodule-2.0)
-pkg_check_modules(DILL REQUIRED libdill)
 
+add_custom_target(
+	libdill_s
+	ALL
+	COMMAND mkdir -p ${CMAKE_BINARY_DIR}/vendor/sustrik/libdill
+	COMMAND lndir ${CMAKE_SOURCE_DIR}/vendor/sustrik/libdill
+	COMMAND ./autogen.sh
+	COMMAND ./configure --enable-static --disable-shared
+	COMMAND make
+	WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/vendor/sustrik/libdill
+	COMMENT "Building libdill")
 
 set(CMAKE_LIBRARY_PATH "")
 set(CMAKE_INCLUDE_PATH "")
 include_directories(AFTER
-	${DILL_INCLUDE_DIRS}
+	${CMAKE_SOURCE_DIR}/vendor/sustrik/libdill
 	${GLIB2_INCLUDE_DIRS})
 
 add_definitions(-DLOG_DOMAIN="gridinit")
@@ -102,7 +111,12 @@ add_executable(gridinit
 		main/uid.c
 		main/utils.c)
 target_link_libraries(gridinit
-	${GLIB2_LIBRARIES} ${DILL_STATIC_LIBRARIES})
+		${GLIB2_LIBRARIES}
+		${CMAKE_BINARY_DIR}/vendor/sustrik/libdill/.libs/libdill.a
+		-pthread -lrt)
+add_dependencies(gridinit
+		libdill_s)
+
 
 add_executable(gridinit_cmd
 		main/gridinit_cmd.c
