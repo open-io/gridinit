@@ -39,7 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
 static gchar *sock_path = NULL;
-static gchar line[65536];
+static gchar line[8192] = "";
 static gboolean flag_color = FALSE;
 static gchar *format = NULL;
 static gboolean flag_version = FALSE;
