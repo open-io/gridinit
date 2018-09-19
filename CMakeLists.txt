@@ -37,6 +37,7 @@ if (CMAKE_COMPILER_IS_GNUCC)
 
 	# gcc >= 4.6
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wmissing-prototypes")
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-missing-field-initializers")
 	#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Winline")
 	#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wconversion")
 	#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wswitch-enum")
@@ -85,14 +86,21 @@ pkg_check_modules(GLIB2 REQUIRED glib-2.0 gthread-2.0 gmodule-2.0)
 
 add_custom_target(
 	libdill_s
-	ALL
-	COMMAND mkdir -p ${CMAKE_BINARY_DIR}/vendor/sustrik/libdill
-	COMMAND lndir ${CMAKE_SOURCE_DIR}/vendor/sustrik/libdill
 	COMMAND ./autogen.sh
 	COMMAND ./configure --enable-static --disable-shared
 	COMMAND make
 	WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/vendor/sustrik/libdill
 	COMMENT "Building libdill")
+
+if (NOT (${CMAKE_BINARY_DIR} STREQUAL ${CMAKE_SOURCE_DIR}))
+add_custom_target(
+	libdill_source
+	COMMAND mkdir -p ${CMAKE_BINARY_DIR}/vendor/sustrik/libdill
+	COMMAND lndir ${CMAKE_SOURCE_DIR}/vendor/sustrik/libdill
+	WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/vendor/sustrik/libdill
+	COMMENT "Preparing the source of libdill")
+	add_dependencies(libdill_s libdill_source)
+endif()
 
 set(CMAKE_LIBRARY_PATH "")
 set(CMAKE_INCLUDE_PATH "")
