@@ -86,6 +86,7 @@ pkg_check_modules(GLIB2 REQUIRED glib-2.0 gthread-2.0 gmodule-2.0)
 
 add_custom_target(
 	libdill_s
+	ALL
 	COMMAND ./autogen.sh
 	COMMAND ./configure --enable-static --disable-shared
 	COMMAND make
@@ -95,9 +96,9 @@ add_custom_target(
 if (NOT (${CMAKE_BINARY_DIR} STREQUAL ${CMAKE_SOURCE_DIR}))
 add_custom_target(
 	libdill_source
+	ALL
 	COMMAND mkdir -p ${CMAKE_BINARY_DIR}/vendor/sustrik/libdill
-	COMMAND lndir ${CMAKE_SOURCE_DIR}/vendor/sustrik/libdill
-	WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/vendor/sustrik/libdill
+	COMMAND cd ${CMAKE_BINARY_DIR}/vendor/sustrik/libdill && lndir ${CMAKE_SOURCE_DIR}/vendor/sustrik/libdill
 	COMMENT "Preparing the source of libdill")
 	add_dependencies(libdill_s libdill_source)
 endif()
