@@ -18,63 +18,38 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <stdlib.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <string.h>
-#include <strings.h>
-#include <math.h>
+#include <stdio.h>
 #include <signal.h>
-#include <unistd.h>
 #include <pwd.h>
 #include <grp.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/types.h>
-#include <sys/stat.h>
 #include <sys/un.h>
 
 #include <syslog.h>
 #include <glob.h>
 
-#include <event.h>
 #include <glib.h>
+#include <libdill.h>
 
 #include <gridinit-utils.h>
 #include "./gridinit_internals.h"
 
 #define USERFLAG_PROCESS_DIED      0x00000002
 #define USERFLAG_PROCESS_RESTARTED 0x00000004
+#define UNUSED __attribute__ ((unused))
 
 #define BOOL(i) ((i)!=0)
-
-typedef int (*cmd_f)(struct bufferevent *bevent, int argc, char **argv);
-
-struct cmd_mapping_s {
-	const gchar *cmd_name;
-	cmd_f cmd_callback;
-};
-
-struct server_sock_s {
-	int family;
-	int fd;
-	char *url;
-	struct event event;
-	struct stat unix_stat_path;
-	struct stat unix_stat_sock;
-};
 
 int main_log_level_default = 0x7F;
 int main_log_level = 0x7F;
 gint64 main_log_level_update = 0;
 
-static GList *list_of_servers = NULL;
-static GList *list_of_signals = NULL; /* list of libevent events */
+GQuark gq_log = 0;
 
 static char syslog_id[256] = "";
-static char sock_path[1024] = "";
+static char sock_path[1024] = GRIDINIT_SOCK_PATH;
 static char pidfile_path[1024] = "";
 static char default_working_directory[1024] = "";
 static char *config_path = NULL;
@@ -148,11 +123,6 @@ glvl_allowed(register GLogLevelFlags lvl)
 		|| (ALLOWED_LEVEL() >= REAL_LEVEL(lvl)));
 }
 
-static struct event timer_event;
-
-static void timer_event_arm(gboolean first);
-static void timer_event_cb(int i, short s, void *p);
-
 static void
 _str_set_array(gboolean concat, gchar ***dst, gchar *str)
 {
@@ -187,24 +157,6 @@ _str_set_array(gboolean concat, gchar ***dst, gchar *str)
 	g_strfreev(tokens);
 }
 
-static void
-timer_event_cb(int i, short s, void *p)
-{
-	(void)i;
-	(void)s;
-	(void)p;
-	timer_event_arm(FALSE);
-}
-
-static void
-timer_event_arm(gboolean first)
-{
-	struct timeval tv;
-	if (first)
-		evtimer_set(&timer_event, timer_event_cb, NULL);
-	tv.tv_sec = tv.tv_usec = 1L;
-	evtimer_add(&timer_event, &tv);
-}
 
 /* Process management helpers ---------------------------------------------- */
 
@@ -270,152 +222,134 @@ thread_ignore_signals(void)
 
 /* COMMANDS management ----------------------------------------------------- */
 
+
 static void
-service_run_groupv(int nb_groups, char **groupv, void *udata, supervisor_cb_f cb)
+service_run_groupv(int nb_groups, char **groupv, GString *out, supervisor_cb_f cb)
 {
 	guint count;
-	struct bufferevent *bevent;
 
 	void group_filter(void *u1, struct child_info_s *ci) {
-		if (!gridinit_group_in_set((gchar*)u1, ci->group)) {
+		const char *group = u1;
+		if (group && !gridinit_group_in_set(group, ci->group)) {
 			TRACE("start: Skipping [%s] with group [%s]", ci->key, ci->group);
-			return;
+		} else {
+			TRACE("Calback on service [%s]", ci->key);
+			cb(out, ci);
+			++ count;
 		}
-		TRACE("Calback on service [%s]", ci->key);
-		cb(udata, ci);
-		++ count;
 	}
 
-	bevent = udata;
-
-	if (!nb_groups || !groupv)
-		supervisor_run_services(NULL, cb);
-	else {
-		int i;
-		char *what;
-		struct child_info_s ci;
-
-		for (i=0; i<nb_groups ;i++) {
-			what = groupv[i];
+	if (!nb_groups || !groupv) {
+		supervisor_run_services(NULL, group_filter);
+	} else {
+		for (int i=0; i<nb_groups ;i++) {
+			char *what = groupv[i];
 			if (*what == '@') {
 				TRACE("Callback on group [%s]", what);
 				count = 0;
 				supervisor_run_services(what+1, group_filter);
-				if (!count && bevent) {
+				if (!count && out) {
 					/* notifies the client the group has not been found */
-					evbuffer_add_printf(bufferevent_get_output(bevent), "%d %s\n", ENOENT, what);
+					g_string_append_printf(out, "%d %s\n", ENOENT, what);
 				}
 			}
 			else {
-				bzero(&ci, sizeof(ci));
+				struct child_info_s ci = {};
 				if (0 == supervisor_children_get_info(what, &ci)) {
 					TRACE("Calback on service [%s]", what);
-					cb(udata, &ci);
-				}
-				else {
-					if (bevent)
-						evbuffer_add_printf(bufferevent_get_output(bevent), "%d %s\n", errno, what);
+					cb(out, &ci);
+				} else {
+					if (out)
+						g_string_append_printf(out, "%d %s\n", errno, what);
 					if (errno == ENOENT)
 						TRACE("Service not found [%s]\n", what);
 					else
-						ERROR("Internal error [%s] : %s", what, strerror(errno));
+						ERROR("Internal error [%s]: %s", what, strerror(errno));
 				}
 			}
 		}
 	}
 }
 
-static int
-command_start(struct bufferevent *bevent, int argc, char **argv)
+static void
+command_start(GString *out, int argc, char **argv)
 {
-	void start_process(void *udata, struct child_info_s *ci) {
-		(void) udata;
-
+	void start_process(void *u UNUSED, struct child_info_s *ci) {
 		supervisor_children_repair(ci->key);
 
 		switch (supervisor_children_status(ci->key, TRUE)) {
 		case 0:
 			INFO("Already started [%s]", ci->key);
-			evbuffer_add_printf(bufferevent_get_output(bevent), "%d %s\n", EALREADY, ci->key);
+			g_string_append_printf(out, "%d %s\n", EALREADY, ci->key);
 			return;
 		case 1:
 			INFO("Started [%s]", ci->key);
-			evbuffer_add_printf(bufferevent_get_output(bevent), "%d %s\n", 0, ci->key);
+			g_string_append_printf(out, "%d %s\n", 0, ci->key);
 			return;
 		default:
-			WARN("Cannot start [%s] : %s", ci->key, strerror(errno));
-			evbuffer_add_printf(bufferevent_get_output(bevent), "%d %s\n", errno, ci->key);
+			WARN("Cannot start [%s]: %s", ci->key, strerror(errno));
+			g_string_append_printf(out, "%d %s\n", errno, ci->key);
 			return;
 		}
 	}
 
-	service_run_groupv(argc, argv, bevent, start_process);
-	bufferevent_enable(bevent, EV_WRITE);
-	bufferevent_flush(bevent, EV_WRITE, BEV_FINISHED);
-	return 0;
+	g_assert_nonnull(out);
+	return service_run_groupv(argc, argv, out, start_process);
 }
 
-static int
-command_stop(struct bufferevent *bevent, int argc, char **argv)
+static void
+command_stop(GString *out, int argc, char **argv)
 {
-	void stop_process(void *udata, struct child_info_s *ci) {
-		(void) udata;
+	void stop_process(void *u UNUSED, struct child_info_s *ci) {
 		switch (supervisor_children_status(ci->key, FALSE)) {
 		case 0:
 			INFO("Already stopped [%s]", ci->key);
-			evbuffer_add_printf(bufferevent_get_output(bevent), "%d %s\n", EALREADY, ci->key);
+			g_string_append_printf(out, "%d %s\n", EALREADY, ci->key);
 			return;
 		case 1:
 			INFO("Stopped [%s]", ci->key);
-			evbuffer_add_printf(bufferevent_get_output(bevent), "%d %s\n", 0, ci->key);
+			g_string_append_printf(out, "%d %s\n", 0, ci->key);
 			return;
 		default:
-			WARN("Cannot stop [%s] : %s", ci->key, strerror(errno));
-			evbuffer_add_printf(bufferevent_get_output(bevent), "%d %s\n", errno, ci->key);
+			WARN("Cannot stop [%s]: %s", ci->key, strerror(errno));
+			g_string_append_printf(out, "%d %s\n", errno, ci->key);
 			return;
 		}
 	}
 
-	service_run_groupv(argc, argv, bevent, stop_process);
-	bufferevent_enable(bevent, EV_WRITE);
-	bufferevent_flush(bevent, EV_WRITE, BEV_FINISHED);
-	return 0;
+	g_assert_nonnull(out);
+	return service_run_groupv(argc, argv, out, stop_process);
 }
 
-static int
-command_restart(struct bufferevent *bevent, int argc, char **argv)
+static void
+command_restart(GString *out, int argc, char **argv)
 {
-	void restart_process(void *udata, struct child_info_s *ci) {
-		(void) udata;
+	void restart_process(void *u UNUSED, struct child_info_s *ci) {
 		switch (supervisor_children_restart(ci->key)) {
 		case 0:
 			INFO("Already restarted [%s]", ci->key);
-			evbuffer_add_printf(bufferevent_get_output(bevent), "%d %s\n", EALREADY, ci->key);
+			g_string_append_printf(out, "%d %s\n", EALREADY, ci->key);
 			return;
 		case 1:
 			INFO("Restart [%s]", ci->key);
-			evbuffer_add_printf(bufferevent_get_output(bevent), "%d %s\n", 0, ci->key);
+			g_string_append_printf(out, "%d %s\n", 0, ci->key);
 			return;
 		default:
-			WARN("Cannot restart [%s] : %s", ci->key, strerror(errno));
-			evbuffer_add_printf(bufferevent_get_output(bevent), "%d %s\n", errno, ci->key);
+			WARN("Cannot restart [%s]: %s", ci->key, strerror(errno));
+			g_string_append_printf(out, "%d %s\n", errno, ci->key);
 			return;
 		}
 	}
 
-	service_run_groupv(argc, argv, bevent, restart_process);
-	bufferevent_enable(bevent, EV_WRITE);
-	bufferevent_flush(bevent, EV_WRITE, BEV_FINISHED);
-	return 0;
+	g_assert_nonnull(out);
+	return service_run_groupv(argc, argv, out, restart_process);
 }
 
-
-static int
-command_show(struct bufferevent *bevent, int argc, char **argv)
+static void
+command_show(GString *out, int argc UNUSED, char **argv UNUSED)
 {
-	void print_process(void *udata, struct child_info_s *ci) {
-		(void) udata;
-		evbuffer_add_printf(bufferevent_get_output(bevent),
+	void print_process(void *u UNUSED, struct child_info_s *ci) {
+		g_string_append_printf(out,
 				"%d "
 				"%d %d %d "
 				"%u %u "
@@ -432,552 +366,229 @@ command_show(struct bufferevent *bevent, int argc, char **argv)
 			ci->key, ci->group, ci->cmd);
 	}
 
-	(void) argc;
-	(void) argv;
-
-	service_run_groupv(0, NULL, NULL, print_process);
-	bufferevent_enable(bevent, EV_WRITE);
-	bufferevent_flush(bevent, EV_WRITE, BEV_FINISHED);
-	return 0;
+	g_assert_nonnull(out);
+	return service_run_groupv(0, NULL, out, print_process);
 }
 
-static int
-command_repair(struct bufferevent *bevent, int argc, char **argv)
+static void
+command_repair(GString *out, int argc, char **argv)
 {
-	void repair_process(void *udata, struct child_info_s *ci) {
-		(void) udata;
+	void repair_process(void *u UNUSED, struct child_info_s *ci) {
 		if (0 == supervisor_children_repair(ci->key)) {
 			INFO("Repaired [%s]", ci->key);
-			evbuffer_add_printf(bufferevent_get_output(bevent), "%d %s\n", 0, ci->key);
-		}
-		else {
-			WARN("Failed to repair [%s] : %s", ci->key, strerror(errno));
-			evbuffer_add_printf(bufferevent_get_output(bevent), "%d %s\n", errno, ci->key);
+			g_string_append_printf(out, "%d %s\n", 0, ci->key);
+		} else {
+			WARN("Failed to repair [%s]: %s", ci->key, strerror(errno));
+			g_string_append_printf(out, "%d %s\n", errno, ci->key);
 		}
 	}
 
-	service_run_groupv(argc, argv, bevent, repair_process);
-	bufferevent_enable(bevent, EV_WRITE);
-	bufferevent_flush(bevent, EV_WRITE, BEV_FINISHED);
-	return 0;
+	g_assert_nonnull(out);
+	return service_run_groupv(argc, argv, out, repair_process);
 }
 
-static int
-command_reload(struct bufferevent *bevent, int argc, char **argv)
+static void
+command_reload(GString *out, int argc UNUSED, char **argv UNUSED)
 {
-	GError *error_local = NULL;
-	guint count;
+	GError *err = NULL;
 
-	(void) argc;
-	(void) argv;
+	g_assert_nonnull(out);
 
-	count = supervisor_children_mark_obsolete();
+	guint count = supervisor_children_mark_obsolete();
+	g_string_append_printf(out, "%d obsoleted %u processes\n", 0, count);
 	TRACE("Marked %u obsolete services\n", count);
-	evbuffer_add_printf(bufferevent_get_output(bevent), "%d obsoleted %u processes\n", 0, count);
 
-	if (!_cfg_reload(TRUE, &error_local)) {
-		WARN("error: Failed to reload the configuration from [%s]\n", config_path);
-		WARN("cause: %s\n", error_local ? error_local->message : "NULL");
-		evbuffer_add_printf(bufferevent_get_output(bevent), "%d reload\n", error_local ? error_local->code : EINVAL);
-	}
-	else {
-		evbuffer_add_printf(bufferevent_get_output(bevent), "0 reload\n");
-
+	if (!_cfg_reload(TRUE, &err)) {
+		WARN("error: Failed to reload the configuration from [%s]: (%d) %s\n",
+				config_path, err ? err->code : 0, err ? err->message : "?");
+		g_string_append_printf(out, "%d reload\n", err ? err->code : EINVAL);
+	} else {
+		g_string_append(out, "0 reload\n");
 		count = supervisor_children_disable_obsolete();
-		evbuffer_add_printf(bufferevent_get_output(bevent), "0 disabled %u obsolete processes\n", count);
+		g_string_append_printf(out, "0 disabled %u obsolete processes\n", count);
 
 		if (count)
 			NOTICE("Services refreshed, %u disabled\n", count);
 		else
 			TRACE("Services refreshed, %u disabled\n", count);
-
 	}
-	return 0;
 }
 
-static struct cmd_mapping_s COMMANDS [] = {
-	{"status",  command_show },
-	{"repair",  command_repair },
-	{"start",   command_start },
-	{"stop",    command_stop },
-	{"restart", command_restart },
-	{"reload",  command_reload },
-	{NULL,      NULL}
-};
+typedef void (*cmd_f) (GString *out, int argc, char **argv);
 
 static cmd_f
 __resolve_command(const gchar *n)
 {
-	int i;
-	for (i=0; ;i++) {
-		struct cmd_mapping_s *cmd = COMMANDS + i;
-		if (!cmd->cmd_name)
-			return NULL;
+	static struct cmd_mapping_s {
+		const gchar *cmd_name;
+		cmd_f cmd_callback;
+	} COMMANDS [] = {
+		{"status",  command_show },
+		{"repair",  command_repair },
+		{"start",   command_start },
+		{"stop",    command_stop },
+		{"restart", command_restart },
+		{"reload",  command_reload },
+		{NULL,      NULL}
+	};
+
+	for (struct cmd_mapping_s *cmd = COMMANDS; cmd->cmd_name ;cmd++) {
 		if (0 == g_ascii_strcasecmp(n, cmd->cmd_name))
 			return cmd->cmd_callback;
 	}
+	return NULL;
 }
 
-
-/* Libevent callbacks ------------------------------------------------------ */
-
-static void
-supervisor_signal_handler(int s, short flags, void *udata)
-{
-	(void) udata, (void) flags;
-
-	switch (s) {
-	case SIGUSR1:
-		flag_more_verbose = ~0;
-		return;
-	case SIGUSR2: /* ignored */
-	case SIGPIPE: /* ignored */
-		return;
-	case SIGINT:
-	case SIGQUIT:
-	case SIGKILL:
-	case SIGTERM:
-		flag_running = 0;
-		return;
-	case SIGCHLD:
-		return;
-	case SIGALRM:
-		return;
-	}
-}
-
-static void
-__bevent_error(struct bufferevent *bevent, short what, void *udata)
-{
-	(void) udata;
-	if (what & BEV_EVENT_CONNECTED) {
-		TRACE("Connection established for fd=%d what=%04X", bufferevent_getfd(bevent), what);
-		bufferevent_enable(bevent, EV_READ|EV_WRITE);
-	}
-	if (what & ~BEV_EVENT_CONNECTED) {
-		int fd, sock_err;
-		socklen_t sock_err_len;
-
-		fd = bufferevent_getfd(bevent);
-		sock_err_len = sizeof(sock_err);
-		if (0 != getsockopt(fd, SOL_SOCKET, SO_ERROR, &sock_err, &sock_err_len))
-			TRACE("Error on fd=%d what=%04X : getsockopt() error : %s", fd, what, strerror(errno));
-		else
-			TRACE("Error on fd=%d what=%04X : %s", fd, what, strerror(sock_err));
-		bufferevent_flush(bevent, EV_READ,  BEV_FINISHED);
-		bufferevent_flush(bevent, EV_WRITE, BEV_FINISHED);
-		bufferevent_enable(bevent, EV_READ|EV_WRITE);
-	}
-}
-
-static void
-__event_command_in(struct bufferevent *bevent, void *udata)
+static GString *
+_command_execute(const char *cmd)
 {
 	int argc = 0;
 	gchar **argv = NULL;
-	char *cmd;
-	size_t cmd_len = 0;
+	GString *out = g_string_sized_new(2048);
 
-	(void) udata;
-	TRACE("Data available from fd=%d", bufferevent_getfd(bevent));
-
-	cmd = evbuffer_readln(bufferevent_get_input(bevent), &cmd_len, EVBUFFER_EOL_CRLF);
-	if (!cmd) {
-		TRACE("Read error from fd=%d", bufferevent_getfd(bevent));
-		bufferevent_disable(bevent, EV_WRITE);
-		bufferevent_enable(bevent,  EV_READ);
-		return;
-	}
-	else {
-		cmd_f callback;
-
-		if (!g_shell_parse_argv(cmd, &argc, &argv, NULL))
-			TRACE("Invalid request from fd=%d", bufferevent_getfd(bevent));
-		else {
-			TRACE("Executing request [%s] from fd=%d", argv[0], bufferevent_getfd(bevent));
-			if (NULL != (callback = __resolve_command(argv[0])))
-				(callback)(bevent, argc-1, argv+1);
-			g_strfreev(argv);
-		}
-		free(cmd);
-
-		bufferevent_flush(bevent, EV_WRITE|EV_READ, BEV_FINISHED);
-		bufferevent_disable(bevent, EV_READ);
-		bufferevent_enable(bevent, EV_WRITE);
-	}
-}
-
-static void
-__event_command_out(struct bufferevent *bevent, void *udata)
-{
-	(void) udata;
-	TRACE("Closing client connection fd=%d", bufferevent_getfd(bevent));
-	bufferevent_disable(bevent, EV_READ|EV_WRITE);
-	close(bufferevent_getfd(bevent));
-	bufferevent_setfd(bevent, -1);
-	bufferevent_free(bevent);
-}
-
-static void
-__event_accept(int fd, short flags, void *udata)
-{
-	struct bufferevent *bevent =  NULL;
-	struct linger ls = {1,0};
-	socklen_t ss_len;
-	struct sockaddr_storage ss;
-	int fd_client;
-	int i_opt, i_rc;
-	struct event_base *libevents_handle;
-
-	(void) flags;
-	libevents_handle = udata;
-
-	ss_len = sizeof(ss);
-	fd_client = accept(fd, (struct sockaddr*)&ss, &ss_len);
-	if (fd_client < 0) {
-		WARN("accept error on fd=%d : %s", fd, strerror(errno));
-		return;
+	if (!g_shell_parse_argv(cmd, &argc, &argv, NULL)) {
+		g_string_append(out, "1 malformed request\n");
+	} else {
+		cmd_f callback = __resolve_command(argv[0]);
+		if (NULL != callback)
+			(callback)(out, argc-1, argv+1);
+		else
+			g_string_append(out, "1 unexpected request\n");
 	}
 
-	/*SO_LINGER*/
-	ls.l_onoff = 1;
-	ls.l_linger = 0;
-	i_rc = setsockopt(fd_client, SOL_SOCKET, SO_LINGER, (void *) &ls, sizeof(ls));
-	if (i_rc == -1)
-		WARN("fd=%i Cannot set the linger behaviour (%s)", fd_client, strerror(errno));
-
-	/*SO_REUSEADDR*/
-	i_opt = 1;
-	i_rc = setsockopt(fd_client, SOL_SOCKET, SO_REUSEADDR, (void*) &i_opt, sizeof(i_opt));
-	if (i_rc == -1)
-		WARN("fd=%i Cannot set the REUSEADDR flag (%s)", fd_client, strerror(errno));
-
-	/*SO_KEEPALIVE*/
-	i_opt = 1;
-	i_rc = setsockopt(fd_client, SOL_SOCKET, SO_KEEPALIVE, (void*) &i_opt, sizeof(i_opt));
-	if (i_rc == -1)
-		WARN("fd=%i Cannot trigger the tcp keepalive behaviour (%s)", fd_client, strerror(errno));
-
-	/* TCP-specific options */
-	socklen_t opt_len = sizeof(i_opt);
-	i_rc = getsockopt(fd_client, SOL_SOCKET, SO_TYPE, (void*)&i_opt, &opt_len);
-	if (i_rc == -1)
-		WARN("fd=%i Cannot check the socket type (%s)", fd_client, strerror(errno));
-	else if (i_opt == SOCK_STREAM && ss.ss_family == AF_INET) {
-
-		/* TCP_QUICKACK */
-		i_opt = 1;
-		i_rc = setsockopt(fd_client, IPPROTO_TCP, TCP_QUICKACK, (void*)&i_opt, sizeof(i_opt));
-		if (i_rc == -1)
-			WARN("fd=%i Cannot set TCP_QUICKACK mode on socket (%s)", fd_client, strerror(errno));
-
-		/* TCP_NODELAY */
-		i_opt = 1;
-		i_rc = setsockopt(fd_client, IPPROTO_TCP, TCP_NODELAY, (void*)&i_opt, sizeof(i_opt));
-		if (i_rc == -1)
-			WARN("fd=%i Cannot set TCP_NODELAY mode on socket (%s)", fd_client, strerror(errno));
-	}
-
-	evutil_make_socket_closeonexec(fd_client);
-
-	/* Now manage this connection */
-	bevent = bufferevent_new(fd_client, __event_command_in, __event_command_out, __bevent_error, NULL);
-	bufferevent_settimeout(bevent, 1000, 4000);
-	bufferevent_enable(bevent, EV_READ);
-	bufferevent_disable(bevent, EV_WRITE);
-	bufferevent_base_set(libevents_handle, bevent);
-	TRACE("Connection accepted server=%d client=%d", fd, fd_client);
+	if (argv) g_strfreev(argv);
+	return out;
 }
 
 
 /* Server socket pool management ------------------------------------------- */
 
-static int
-servers_is_unix(struct server_sock_s *server)
+static GString *
+_read_line(int ldh, const int64_t dl)
 {
-	struct sockaddr_storage ss;
-	socklen_t ss_len;
+	GString *out = g_string_new("");
+	gchar c;
+	int r;
 
-	bzero(&ss, sizeof(ss));
-	ss_len = sizeof(ss);
+label_retry:
+	c = '\0';
+	r = dill_brecv(ldh, &c, 1, dl);
+	if (r < 0) {
+		g_string_free(out, TRUE);
+		return NULL;
+	}
+	if (c != '\n') {
+		g_string_append_c(out, c);
+		goto label_retry;
+	}
+	return out;
+}
 
-	if (server->fd < 0)
-		return FALSE;
+static dill_coroutine void
+_client_run(int ch, int ldh_client)
+{
+	TRACE("client dill_now running h=%d", ldh_client);
+	GString *in = _read_line(ldh_client, dill_now() + 5000);
+	if (!in) {
+		WARN("Client failed: (%d) %s", errno, strerror(errno));
+	} else {
+		TRACE("Client h=%d recv=%" G_GSIZE_FORMAT " [%s]", ldh_client, in ? in->len : 0, in ? in->str : NULL);
+		GString *out = _command_execute(in->str);
+		while (out->len > 0 && out->str[out->len-1] == '\n')
+			g_string_truncate(out, out->len - 1);
+		dill_bsend(ldh_client, out->str, out->len, dill_now() + 5000);
+		g_string_free(in, TRUE);
+		g_string_free(out, TRUE);
+	}
 
-	if (0 == getsockname(server->fd, (struct sockaddr*) &ss, &ss_len)) {
-		if (ss.ss_family==AF_UNIX || ss.ss_family==AF_LOCAL) {
-			return TRUE;
+	TRACE("client dill_now exiting h=%d", ldh_client);
+	int rc = dill_hclose(ldh_client);
+	g_assert(rc == 0);
+
+	int v = 0;
+	(void) dill_chsend(ch, &v, sizeof(v), 0);
+}
+
+static dill_coroutine void
+_server_run(int ch, const char *path)
+{
+	int workers = dill_bundle();
+	g_assert(workers >= 0);
+
+	int ldh_server = dill_ipc_listen(path, 1024);
+	if (ldh_server < 0) {
+		ERROR("Failed to listen to the commands socket: (%d) %s", errno, strerror(errno));
+		flag_running = 0;
+		return;
+	}
+
+	DEBUG("Initiated a server socket on [%s] h=%d", sock_path, ldh_server);
+
+	while (flag_running) {
+		int ldh_client = dill_ipc_accept(ldh_server, dill_now() + 30000);
+		if (ldh_client >= 0) {
+			TRACE("Client accepted h=%d", ldh_client);
+			dill_bundle_go(workers, _client_run(ch, ldh_client));
+		} else if (errno != EAGAIN && errno != EINTR && errno != ETIMEDOUT) {
+			WARN("accept error: (%d) %s", errno, strerror(errno));
+			flag_running = 0;
 		}
 	}
 
-	errno = 0;
-	return FALSE;
-}
+	int rc = dill_hclose(ldh_server);
+	g_assert(rc == 0);
 
-static int
-servers_is_the_same(struct server_sock_s *server)
-{
-	struct stat stat_sock, stat_path;
-
-	bzero(&stat_sock, sizeof(stat_sock));
-	bzero(&stat_path, sizeof(stat_path));
-
-	return ((0 == stat(server->url, &stat_path))
-			&& (0 == fstat(server->fd, &stat_sock))
-			&& (stat_path.st_ino == server->unix_stat_path.st_ino)
-			&& (stat_sock.st_ino == server->unix_stat_sock.st_ino));
+	dill_bundle_wait(workers, dill_now() + 30000);
+	dill_hclose(workers);
 }
 
 static void
-servers_unmonitor_one(struct server_sock_s *server)
+_single_check(void)
 {
-	if (server->fd < 0) {
-		/* server socket already stopped */
-		return ;
+	guint proc_count = supervisor_children_catharsis(NULL, alert_proc_died);
+	if (proc_count > 0)
+		DEBUG("%u services died", proc_count);
+
+	/* alert for the services that died */
+	supervisor_run_services(NULL, alert_send_deferred);
+
+	proc_count = supervisor_children_kill_disabled();
+	if (proc_count)
+		DEBUG("Killed %u disabled/stopped services", proc_count);
+
+	proc_count = supervisor_children_start_enabled(NULL, alert_proc_started);
+	if (proc_count)
+		DEBUG("Started %u enabled services", proc_count);
+
+	if (flag_more_verbose) {
+		NOTICE("Increasing verbosity for 15 minutes");
+		logger_verbose();
+		flag_more_verbose = 0;
 	}
 
-	/* Stop the libevent management right now */
-	if (event_pending(&(server->event), EV_READ, NULL))
-		event_del(&(server->event));
-
-	/* If the current socket is a UNIX socket, remove the socket file
-	 * on disk only if this file is exactly the same that the file
-	 * this socket created. We must avoid deleting a socket file
-	 * opened by another process */
-	if (servers_is_unix(server) && servers_is_the_same(server))
-		unlink(server->url);
-
-	shutdown(server->fd, SHUT_RDWR);
-	close(server->fd);
-	server->fd = -1;
-}
-
-/* starts the server monitoring with the libevent.
- * The inner file descriptor must be a valid socket filedes */
-static gboolean
-servers_monitor_one(struct server_sock_s *server)
-{
-	struct sockaddr_storage ss;
-	socklen_t ss_len;
-
-	if (!server || server->fd < 0) {
-		errno = EINVAL;
-		return FALSE;
-	}
-
-	memset(&ss, 0x00, sizeof(ss));
-	ss_len = sizeof(ss);
-	if (-1 == getsockname(server->fd, (struct sockaddr*) &ss, &ss_len)) {
-		if (!flag_quiet)
-			g_printerr("Error with socket [%s]\n", server->url);
-		return FALSE;
-	}
-
-	/* For unix sockets, remember the stat for further checks */
-	if (ss.ss_family==AF_UNIX || ss.ss_family==AF_LOCAL) {
-		if (0 != stat(((struct sockaddr_un*)&ss)->sun_path, &(server->unix_stat_path))) {
-			if (!flag_quiet)
-				g_printerr("Error with socket [%s]\n", server->url);
-			return FALSE;
-		}
-		if (0 != fstat(server->fd, &(server->unix_stat_sock))) {
-			if (!flag_quiet)
-				g_printerr("Error with socket [%s]\n", server->url);
-			return FALSE;
+	if (main_log_level_update) {
+		gint64 when = g_get_monotonic_time() - (15 * G_TIME_SPAN_MINUTE);
+		if (main_log_level_update < when) {
+			NOTICE("Verbosity reset to its default value");
+			main_log_level = main_log_level_default;
+			main_log_level_update = 0;
 		}
 	}
-
-	event_set(&(server->event), server->fd, EV_READ|EV_PERSIST, __event_accept, NULL);
-	event_add(&(server->event), NULL);
-	errno = 0;
-	if (!flag_quiet)
-		g_printerr("Socket opened [%s]\n", server->url);
-	return TRUE;
-}
-
-static int
-servers_monitor_none(void)
-{
-	GList *l;
-
-	TRACE("About to stop all the server sockets");
-	for (l=list_of_servers; l ;l=l->next) {
-		struct server_sock_s *s = l->data;
-		servers_unmonitor_one(s);
-	}
-
-	errno = 0;
-	return TRUE;
-}
-
-static int
-servers_monitor_all(void)
-{
-	GList *l;
-
-	TRACE("About to monitor all the server sockets");
-
-	for (l=list_of_servers; l ;l=l->next) {
-		struct server_sock_s *s = l->data;
-		if (!servers_monitor_one(s))
-			return FALSE;
-	}
-
-	errno = 0;
-	return TRUE;
-}
-
-/**
- * Creates a server structure based on the file descriptor and
- * add it to the list
- */
-static gboolean
-servers_save_fd(int fd, const char *url)
-{
-	struct server_sock_s *server;
-
-	if (fd < 0)
-		return FALSE;
-
-	/* should check if the socket is not already monitored */
-	server = g_malloc0(sizeof(*server));
-	server->fd = fd;
-	server->url = g_strdup(url);
-
-	list_of_servers = g_list_prepend(list_of_servers, server);
-	return TRUE;
-}
-
-static int
-__open_unix_server(const char *path)
-{
-	struct sockaddr_un local = {};
-
-	if (!path || strlen(path) >= sizeof(local.sun_path)) {
-		errno = EINVAL;
-		return -1;
-	}
-
-	/* Create ressources to monitor */
-#ifdef SOCK_CLOEXEC
-# define SOCK_FLAGS SOCK_CLOEXEC
-#else
-# define SOCK_FLAGS 0
-#endif
-
-	int sock = socket(PF_UNIX, SOCK_STREAM | SOCK_FLAGS, 0);
-	if (sock < 0)
-		return -1;
-
-#ifndef SOCK_CLOEXEC
-# ifdef FD_CLOEXEC
-	(void) fcntl(sock, F_SETFD, fcntl(sock, F_GETFD)|FD_CLOEXEC);
-# endif
-#endif
-
-	/* Bind to file */
-	local.sun_family = AF_UNIX;
-	g_strlcpy(local.sun_path, path, sizeof(local.sun_path)-1);
-
-	if (-1 == bind(sock, (struct sockaddr *)&local, sizeof(local)))
-		goto label_error;
-
-	/* Listen on that socket */
-	if (-1 == listen(sock, 65536))
-		goto label_error;
-
-	errno = 0;
-	return sock;
-
-label_error:
-	if (sock >= 0) {
-		typeof(errno) errsav;
-		errsav = errno;
-		close(sock);
-		errno = errsav;
-	}
-	return -1;
-}
-
-/**
- * Opens a UNIX server socket then manage a server based on it
- */
-static int
-servers_save_unix(const char *path)
-{
-	int sock;
-
-	if (-1 == (sock = __open_unix_server(path)))
-		goto label_error;
-
-	if (!servers_save_fd(sock, path))
-		goto label_error;
-
-	errno = 0;
-	return sock;
-
-label_error:
-	if (sock >= 0) {
-		typeof(errno) errsav;
-		errsav = errno;
-		shutdown(sock, SHUT_RDWR);
-		close(sock);
-		errno = errsav;
-	}
-	return -1;
-}
-
-/**
- * Stops the server socket then
- */
-static void
-servers_clean(void)
-{
-	GList *l;
-
-	/* stop */
-	servers_monitor_none();
-
-	/* clean */
-	for (l=list_of_servers; l ; l=l->next) {
-		struct server_sock_s *p_server = l->data;
-
-		if (p_server->url)
-			g_free(p_server->url);
-
-		memset(p_server, 0x00, sizeof(*p_server));
-		g_free(p_server);
-		l->data = NULL;
-	}
-
-	g_list_free(list_of_servers);
-	list_of_servers = NULL;
-}
-
-/* Signals management ------------------------------------------------------ */
-
-static void
-signals_manage(int s)
-{
-	struct event *signal_event;
-	signal_event = g_malloc0(sizeof(*signal_event));
-	event_set(signal_event, s, EV_SIGNAL|EV_PERSIST, supervisor_signal_handler, NULL);
-	event_add(signal_event, NULL);
-	list_of_signals = g_list_prepend(list_of_signals, signal_event);
 }
 
 static void
-signals_clean(void)
+_routine_check(int ch)
 {
-	GList *l;
-	for (l=list_of_signals; l ;l=l->next) {
-		struct event *signal_event = l->data;
-		g_free(signal_event);
-		l->data = NULL;
+	int v = 0;
+	while (flag_running) {
+		_single_check();
+		/* wake-up periodically or upon a ping from a cliet worker */
+		int rc = dill_chrecv(ch, &v, sizeof(v), dill_now() + 1000);
+		if (rc < 0 && errno != ETIMEDOUT)
+			return;
 	}
-	g_list_free(list_of_signals);
-	list_of_signals = NULL;
 }
+
 
 /* Configuration ----------------------------------------------------------- */
 
@@ -1124,8 +735,6 @@ _cfg_service_load_env(GKeyFile *kf, const gchar *section, const gchar *str_key)
 static gboolean
 _group_is_accepted(gchar *str_key, gchar *str_group)
 {
-	gchar **p_group, **which;
-
 	if (!groups_only_cli && !groups_only_cfg) {
 		TRACE("Service [%s] accepted : gridinit not restricted to some groups", str_key);
 		return TRUE;
@@ -1135,8 +744,8 @@ _group_is_accepted(gchar *str_key, gchar *str_group)
 		return FALSE;
 	}
 
-	which = groups_only_cli ? groups_only_cli : groups_only_cfg;
-	for (p_group=which; *p_group ;p_group++) {
+	gchar **which = groups_only_cli ? groups_only_cli : groups_only_cfg;
+	for (gchar **p_group=which; *p_group ;p_group++) {
 		if (0 == g_ascii_strcasecmp(*p_group, str_group)) {
 			TRACE("Service [%s] accepted : belongs to an allowed group", str_key);
 			return TRUE;
@@ -1193,13 +802,13 @@ _cfg_section_service(GKeyFile *kf, const gchar *section, GError **err)
 
 		if (!uid_exists(str_uid, &uid)) {
 			/* Invalid user */
-			*err = g_error_printf(LOG_DOMAIN, EINVAL, "Service [%s] cannot cannot receive UID [%s] : errno=%d %s",
+			*err = g_error_new(gq_log, EINVAL, "Service [%s] cannot cannot receive UID [%s] : errno=%d %s",
 		                        str_key, str_uid, errno, strerror(errno));
 			goto label_exit;
 		}
 		if (!gid_exists(str_gid, &gid)) {
 			/* Invalid group */
-			*err = g_error_printf(LOG_DOMAIN, EINVAL, "Service [%s] cannot cannot receive GID [%s] : errno=%d %s",
+			*err = g_error_new(gq_log, EINVAL, "Service [%s] cannot cannot receive GID [%s] : errno=%d %s",
 		                        str_key, str_gid, errno, strerror(errno));
 			goto label_exit;
 		}
@@ -1217,7 +826,7 @@ _cfg_section_service(GKeyFile *kf, const gchar *section, GError **err)
 	/* Enables or not. This is a lock controlled by the configuration
 	 * that overrides all other child states. */
 	if (0 > supervisor_children_enable(str_key, _cfg_value_is_true(str_enabled))) {
-		*err = g_error_printf(LOG_DOMAIN, errno, "Service [%s] cannot be marked [%s] : %s",
+		*err = g_error_new(gq_log, errno, "Service [%s] cannot be marked [%s] : %s",
 		                        str_key, (_cfg_value_is_true(str_enabled)?"ENABLED":"DISABLED"),
 					strerror(errno));
 		goto label_exit;
@@ -1454,16 +1063,14 @@ static gboolean
 _cfg_reload_file(GKeyFile *kf, gboolean services_only, GError **err)
 {
 	gboolean rc = FALSE;
-	gchar **groups=NULL, **p_group=NULL;
-
-	groups = g_key_file_get_groups(kf, NULL);
+	gchar **groups = g_key_file_get_groups(kf, NULL);
 
 	if (!groups) {
-		*err = g_error_new(g_quark_from_static_string("gridinit"), EINVAL, "no group");
+		*err = g_error_new(gq_log, EINVAL, "no group");
 		return FALSE;
 	}
 
-	for (p_group=groups; *p_group ;p_group++) {
+	for (gchar **p_group=groups; *p_group ;p_group++) {
 
 		TRACE("Reading section [%s]", *p_group);
 
@@ -1498,9 +1105,7 @@ static gboolean
 _cfg_reload(gboolean services_only, GError **err)
 {
 	gboolean rc = FALSE;
-	GKeyFile *kf = NULL;
-
-	kf = g_key_file_new();
+	GKeyFile *kf = g_key_file_new();
 
 	if (!g_key_file_load_from_file(kf, config_path, 0, err)) {
 		SETERRNO(err);
@@ -1521,12 +1126,11 @@ _cfg_reload(gboolean services_only, GError **err)
 			NOTICE("errno=%d %s : %s", en, path, strerror(en));
 			return 0;
 		}
-		int glob_rc;
 		glob_t subfiles_glob = {};
 
 		DEBUG("Loading services files matching [%s]", config_subdir);
 
-		glob_rc = glob(config_subdir,
+		int glob_rc = glob(config_subdir,
 				GLOB_BRACE|GLOB_NOSORT|GLOB_MARK,
 				notify_error, &subfiles_glob);
 		if (glob_rc != 0) {
@@ -1724,9 +1328,7 @@ static void
 __parse_options(int argc, char ** args)
 {
 	GError *error_local = NULL;
-	GOptionContext *context;
-
-	context = g_option_context_new(" CONFIG_PATH [LOG4C_PATH]");
+	GOptionContext *context = g_option_context_new(" CONFIG_PATH [LOG4C_PATH]");
 	g_option_context_add_main_entries(context, entries, NULL);
 	if (!g_option_context_parse(context, &argc, &args, &error_local)) {
 		g_print("option parsing failed: %s\n", error_local->message);
@@ -1751,6 +1353,8 @@ __parse_options(int argc, char ** args)
 		exit(1);
 		return;
 	}
+	g_option_context_free(context);
+	context = NULL;
 
 	if (*syslog_id) {
 		openlog(g_get_prgname(), LOG_PID, LOG_LOCAL0);
@@ -1823,25 +1427,78 @@ is_gridinit_running(const gchar *path)
 	return FALSE;
 }
 
+static void _signal_handler(int s)
+{
+	switch (s) {
+	case SIGUSR1:
+		flag_more_verbose = ~0;
+		return;
+	case SIGINT:
+	case SIGQUIT:
+	case SIGKILL:
+	case SIGTERM:
+		flag_running = 0;
+		return;
+	case SIGUSR2:
+	case SIGPIPE:
+	case SIGCHLD:
+	case SIGALRM:
+		return;
+	}
+}
+
+static int
+_action(void)
+{
+	int rc, ch[2] = {-1, -1};
+
+	rc = dill_chmake(ch);
+	if (rc != 0)
+		return rc;
+
+	rc = dill_chdone(ch[1]);  /* one way only */
+	if (rc != 0)
+		goto label_error;
+
+	/* Kickoff the network service */
+	int ldr_server = dill_go(_server_run(ch[0], sock_path));
+	if (ldr_server < 0) {
+		ERROR("Failed to kickoff the server coroutine: (%d) %s",
+				errno, strerror(errno));
+		rc = -1;
+		goto label_error;
+	} else {
+		DEBUG("Started the server coroutine h=%d", ldr_server);
+	}
+
+	/* start all the enabled processes, then run the main loop */
+	rc = 0;
+	guint proc_count = supervisor_children_start_enabled(NULL, NULL);
+	DEBUG("First started %u processes", proc_count);
+
+	_routine_check(ch[1]);
+	rc = 0;
+
+	/* Stop the server coroutine and handle */
+	DEBUG("Stopping the server");
+	if (ldr_server >= 0) {
+		dill_hclose(ldr_server);
+		ldr_server = -1;
+	}
+
+label_error:
+	dill_chdone(ch[0]);
+	dill_hclose(ch[0]);
+	dill_hclose(ch[1]);
+	return rc;
+}
+
 int
 main(int argc, char ** args)
 {
-	guint proc_count;
 	int rc = 1;
-	struct event_base *libevents_handle = NULL;
 
-	void postfork(void *udata) {
-		(void) udata;
-		if (libevents_handle)
-			event_reinit(libevents_handle);
-	}
-
-	groups_only_cli = NULL;
-	groups_only_cfg = NULL;
-	bzero(pidfile_path, sizeof(pidfile_path));
-	bzero(default_working_directory, sizeof(default_working_directory));
-
-	g_strlcpy(sock_path, GRIDINIT_SOCK_PATH, sizeof(sock_path));
+	gq_log = g_quark_from_static_string(LOG_DOMAIN);
 
 	logger_init_level(GRID_LOGLVL_INFO);
 	g_log_set_default_handler(logger_stderr, NULL);
@@ -1869,109 +1526,34 @@ main(int argc, char ** args)
 		write_pid_file();
 	}
 
-	if (-1 == servers_save_unix(sock_path)) {
-		ERROR("Failed to open the UNIX socket for commands : %s",
-			strerror(errno));
-		goto label_exit;
-	}
+	/* Signal management */
+	signal(SIGTERM, _signal_handler);
+	signal(SIGABRT, _signal_handler);
+	signal(SIGINT, _signal_handler);
+	signal(SIGALRM, _signal_handler);
+	signal(SIGQUIT, _signal_handler);
+	signal(SIGUSR1, _signal_handler);
+	signal(SIGPIPE, _signal_handler);
+	signal(SIGUSR2, _signal_handler);
+	signal(SIGCHLD, _signal_handler);
 
-	/* Starts the network and the signal management */
-	DEBUG("Initiating the network and signals management");
-	libevents_handle = event_init();
-
-	supervisor_set_callback_postfork(postfork, NULL);
-
-	signals_manage(SIGTERM);
-	signals_manage(SIGABRT);
-	signals_manage(SIGINT);
-	signals_manage(SIGALRM);
-	signals_manage(SIGQUIT);
-	signals_manage(SIGUSR1);
-	signals_manage(SIGPIPE);
-	signals_manage(SIGUSR2);
-	signals_manage(SIGCHLD);
-	if (!servers_monitor_all()) {
-		ERROR("Failed to monitor the server sockets");
-		goto label_exit;
-	}
-
-	timer_event_arm(TRUE);
-
-	DEBUG("Starting the event loop!");
-
-	/* start all the enabled processes */
-	proc_count = supervisor_children_start_enabled(NULL, NULL);
-	DEBUG("First started %u processes", proc_count);
-
-	while (flag_running) {
-
-		proc_count = supervisor_children_catharsis(NULL, alert_proc_died);
-		if (proc_count > 0)
-			DEBUG("%u services died", proc_count);
-
-		/* alert for the services that died */
-		supervisor_run_services(NULL, alert_send_deferred);
-
-		proc_count = supervisor_children_kill_disabled();
-		if (proc_count)
-			DEBUG("Killed %u disabled/stopped services", proc_count);
-
-		proc_count = supervisor_children_start_enabled(NULL, alert_proc_started);
-		if (proc_count)
-			DEBUG("Started %u enabled services", proc_count);
-
-		if (!flag_running)
-			break;
-		if (flag_more_verbose) {
-			NOTICE("Increasing verbosity for 15 minutes");
-			logger_verbose();
-			flag_more_verbose = 0;
-		}
-
-		if (main_log_level_update) {
-			gint64 when = g_get_monotonic_time() - (15 * G_TIME_SPAN_MINUTE);
-			if (main_log_level_update < when) {
-				NOTICE("Verbosity reset to its default value");
-				main_log_level = main_log_level_default;
-				main_log_level_update = 0;
-			}
-		}
-
-		/* Be sure to wake */
-		alarm(1);
-
-		/* Manages the connections pool */
-		if (0 > event_loop(EVLOOP_ONCE)) {
-			ERROR("event_loop() error : %s", strerror(errno));
-			break;
-		}
-	}
-
-	rc = 0;
+	rc = _action();
 
 label_exit:
-	/* stop all the processes */
+	thread_ignore_signals();
+
 	DEBUG("Stopping all the children");
 	(void) supervisor_children_stopall(1);
 
-	thread_ignore_signals();
 	DEBUG("Waiting for them to die");
 	while (supervisor_children_kill_disabled() > 0)
 		sleep(1);
 
-	/* clean the working structures */
-	thread_ignore_signals();
-
 	DEBUG("Cleaning the working structures");
-	if (libevents_handle)
-		event_base_free(libevents_handle);
-
 	supervisor_children_cleanall();
 	supervisor_children_fini();
-	servers_clean();
-	signals_clean();
-	g_free(config_path);
 
+	g_free(config_path);
 	closelog();
 	return rc;
 }

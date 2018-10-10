@@ -39,19 +39,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 # define GRID_LOGLVL_WARN   (2  << G_LOG_LEVEL_USER_SHIFT)
 # define GRID_LOGLVL_ERROR  (1  << G_LOG_LEVEL_USER_SHIFT)
 
-# define FATAL(Format,...)  g_log(GRIDINIT_DOMAIN, GRID_LOGLVL_ERROR,  Format, ##__VA_ARGS__)
-# define ALERT(Format,...)  g_log(GRIDINIT_DOMAIN, GRID_LOGLVL_ERROR,  Format, ##__VA_ARGS__)
-# define CRIT(Format,...)   g_log(GRIDINIT_DOMAIN, GRID_LOGLVL_ERROR,  Format, ##__VA_ARGS__)
-# define ERROR(Format,...)  g_log(GRIDINIT_DOMAIN, GRID_LOGLVL_ERROR,  Format, ##__VA_ARGS__)
-# define WARN(Format,...)   g_log(GRIDINIT_DOMAIN, GRID_LOGLVL_WARN,   Format, ##__VA_ARGS__)
-# define NOTICE(Format,...) g_log(GRIDINIT_DOMAIN, GRID_LOGLVL_NOTICE, Format, ##__VA_ARGS__)
-# define INFO(Format,...)   g_log(GRIDINIT_DOMAIN, GRID_LOGLVL_INFO,   Format, ##__VA_ARGS__)
-# define DEBUG(Format,...)  g_log(GRIDINIT_DOMAIN, GRID_LOGLVL_DEBUG,  Format, ##__VA_ARGS__)
-# define TRACE(Format,...)  g_log(GRIDINIT_DOMAIN, GRID_LOGLVL_TRACE,  Format, ##__VA_ARGS__)
-
-GError* g_error_printf(const char *dom, int code, const char *fmt, ...);
+# define FATAL(Format,...)  g_log(LOG_DOMAIN, GRID_LOGLVL_ERROR,  Format, ##__VA_ARGS__)
+# define ALERT(Format,...)  g_log(LOG_DOMAIN, GRID_LOGLVL_ERROR,  Format, ##__VA_ARGS__)
+# define CRIT(Format,...)   g_log(LOG_DOMAIN, GRID_LOGLVL_ERROR,  Format, ##__VA_ARGS__)
+# define ERROR(Format,...)  g_log(LOG_DOMAIN, GRID_LOGLVL_ERROR,  Format, ##__VA_ARGS__)
+# define WARN(Format,...)   g_log(LOG_DOMAIN, GRID_LOGLVL_WARN,   Format, ##__VA_ARGS__)
+# define NOTICE(Format,...) g_log(LOG_DOMAIN, GRID_LOGLVL_NOTICE, Format, ##__VA_ARGS__)
+# define INFO(Format,...)   g_log(LOG_DOMAIN, GRID_LOGLVL_INFO,   Format, ##__VA_ARGS__)
+# define DEBUG(Format,...)  g_log(LOG_DOMAIN, GRID_LOGLVL_DEBUG,  Format, ##__VA_ARGS__)
+# define TRACE(Format,...)  g_log(LOG_DOMAIN, GRID_LOGLVL_TRACE,  Format, ##__VA_ARGS__)
 
 extern time_t supervisor_default_delay_KILL;
+
+extern GQuark gq_log;
 
 /* Children monitoring ----------------------------------------------------- */
 
@@ -86,15 +86,10 @@ struct child_info_s {
 	gboolean started;
 };
 
-typedef void (supervisor_postfork_f) (void *udata);
-
 typedef void (supervisor_cb_f) (void *udata, struct child_info_s *ci);
 
 
 void supervisor_children_init(void);
-
-/* Sets an optional function that will be used just after the fork */
-void supervisor_set_callback_postfork(supervisor_postfork_f *cb, void *udata);
 
 void supervisor_children_fini(void);
 

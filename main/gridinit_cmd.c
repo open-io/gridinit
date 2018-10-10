@@ -18,18 +18,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <stdlib.h>
-#include <string.h>
+#include <stdio.h>
 #include <getopt.h>
 #include <strings.h>
-#include <stdio.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <unistd.h>
 #include <sys/socket.h>
-#include <sys/stat.h>
-#include "./format_output.h"
+#include <sys/un.h>
+
 #include <glib.h>
 
+#include "./format_output.h"
 #include "./gridinit_internals.h"
 
 #define MINI 0
@@ -37,7 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
 static gchar *sock_path = NULL;
-static gchar line[65536];
+static gchar line[8192] = "";
 static gboolean flag_color = FALSE;
 static gchar *format = NULL;
 static gboolean flag_version = FALSE;
@@ -149,6 +149,33 @@ static const gchar description[] =
 	"group\n";
 
 
+static int
+__open_unix_client(const char *path)
+{
+	struct sockaddr_un local = {0};
+
+	if (!path || strlen(path) >= sizeof(local.sun_path)) {
+		errno = EINVAL;
+		return -1;
+	}
+	local.sun_family = AF_UNIX;
+	g_strlcpy(local.sun_path, path, sizeof(local.sun_path));
+
+	int sock = socket(PF_UNIX, SOCK_STREAM, 0);
+	if (sock < 0)
+		return -1;
+
+	if (-1 == connect(sock, (struct sockaddr *)&local, sizeof(local))) {
+		int errsav = errno;
+		close(sock);
+		errno = errsav;
+		return -1;
+	}
+
+	errno = 0;
+	return sock;
+}
+
 static gint
 compare_child_info(gconstpointer p1, gconstpointer p2)
 {
@@ -187,8 +214,7 @@ static size_t
 get_longest_key(GList *all_jobs)
 {
 	size_t maxlen = 4;
-	GList *l;
-	for (l=all_jobs; l ;l=l->next) {
+	for (GList *l=all_jobs; l ;l=l->next) {
 		struct child_info_s *ci = l->data;
 		size_t len = strlen(ci->key);
 		if (len > maxlen)
@@ -197,36 +223,18 @@ get_longest_key(GList *all_jobs)
 	return maxlen;
 }
 
-static size_t
-my_chomp(gchar *str)
-{
-	gchar c;
-	size_t len;
-
-	len = strlen(str);
-	while (len && (c=str[len-1]) && g_ascii_isspace(c))
-		str[--len] = '\0';
-	return len;
-}
-
 static void
 unpack_line(gchar *str, gchar **start, int *code)
 {
-	gchar c, *p = NULL;
-
 	*start = str;
 	*code = EINVAL;
-	if (!str || !*str)
+	if (!str)
 		return ;
-	if (!my_chomp(str))
-		return ;
+	str = g_strstrip(str);
+	gchar *p = NULL;
 	*code = g_ascii_strtoll(str, &p, 10);
-
-	if (p) {
-		while ((c = *p) && g_ascii_isspace(c))
-			p++;
-		*start = p;
-	}
+	if (p)
+		*start = g_strchug(p);
 }
 
 static GList*
@@ -236,10 +244,8 @@ read_services_list(FILE *in_stream)
 
 	while (!feof(in_stream) && !ferror(in_stream)) {
 		if (NULL != fgets(line, sizeof(line), in_stream)) {
-
-			(void) my_chomp(line);
-
-			gchar **tokens = g_strsplit_set(line, " \t\r\n", 15);
+			gchar *l = g_strstrip(line);
+			gchar **tokens = g_strsplit_set(l, " \t\r\n", 15);
 			if (tokens) {
 				if (g_strv_length(tokens) == 15) {
 					struct child_info_s ci;
@@ -273,10 +279,8 @@ read_services_list(FILE *in_stream)
 static void
 dump_as_is(FILE *in_stream, void *udata)
 {
-	int code;
-	gchar *start;
 	gboolean first = TRUE;
-	struct dump_as_is_arg_s *dump_args;
+	struct dump_as_is_arg_s *dump_args = udata;
 
 	FORMAT format_t = parse_format(format);
 
@@ -288,16 +292,14 @@ dump_as_is(FILE *in_stream, void *udata)
 	else
 		kw = &KEYWORDS_NORMAL;
 
-
-	dump_args = udata;
-
 	print_header(format_t);
 
 	while (!feof(in_stream) && !ferror(in_stream)) {
 		bzero(line, sizeof(line));
 		if (NULL != fgets(line, sizeof(line), in_stream)) {
-			start = NULL;
-			(void)unpack_line(line, &start, &code);
+			int code = 0;
+			gchar *start = NULL;
+			unpack_line(line, &start, &code);
 
 			if (dump_args) {
 				if (code==0 || code==EALREADY)

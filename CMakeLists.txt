@@ -37,6 +37,7 @@ if (CMAKE_COMPILER_IS_GNUCC)
 
 	# gcc >= 4.6
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wmissing-prototypes")
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-missing-field-initializers")
 	#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Winline")
 	#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wconversion")
 	#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wswitch-enum")
@@ -77,27 +78,60 @@ else()
 	else()
 		set (LD_LIBDIR "lib")
 	endif()
-	MESSAGE("LD_LIBDIR guessed to ${LD_LIBDIR}")
 endif()
 
 
 find_package(PkgConfig)
 pkg_check_modules(GLIB2 REQUIRED glib-2.0 gthread-2.0 gmodule-2.0)
-pkg_check_modules(LIBEVENT REQUIRED libevent)
 
-### explicit plugin directory for alerting modules ###
+add_custom_target(
+	libdill_s
+	ALL
+	COMMAND ./autogen.sh
+	COMMAND ./configure --enable-static --disable-shared
+	COMMAND make
+	WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/vendor/sustrik/libdill
+	COMMENT "Building libdill")
 
-set(GRIDINIT_PLUGINS_DIRECTORY "${LD_LIBDIR}/gridinit")
-if(GRIDINIT_PLUGINS)
-	set(GRIDINIT_PLUGINS_DIRECTORY "${GRIDINIT_PLUGINS}")
-endif(GRIDINIT_PLUGINS)
+if (NOT (${CMAKE_BINARY_DIR} STREQUAL ${CMAKE_SOURCE_DIR}))
+add_custom_target(
+	libdill_source
+	ALL
+	COMMAND mkdir -p ${CMAKE_BINARY_DIR}/vendor/sustrik/libdill
+	COMMAND cd ${CMAKE_BINARY_DIR}/vendor/sustrik/libdill && lndir ${CMAKE_SOURCE_DIR}/vendor/sustrik/libdill
+	COMMENT "Preparing the source of libdill")
+	add_dependencies(libdill_s libdill_source)
+endif()
 
 set(CMAKE_LIBRARY_PATH "")
 set(CMAKE_INCLUDE_PATH "")
-include_directories(AFTER ${GLIB2_INCLUDE_DIRS})
+include_directories(AFTER
+	${CMAKE_SOURCE_DIR}/vendor/sustrik/libdill
+	${GLIB2_INCLUDE_DIRS})
 
 add_definitions(-DLOG_DOMAIN="gridinit")
-add_definitions(-DGRIDINIT_DOMAIN="gridinit")
 
-add_subdirectory(./main)
+include_directories(BEFORE ${CMAKE_SOURCE_DIR}/main)
 
+add_executable(gridinit
+		main/gridinit.c
+		main/children.c
+		main/limits.c
+		main/uid.c
+		main/utils.c)
+target_link_libraries(gridinit
+		${GLIB2_LIBRARIES}
+		${CMAKE_BINARY_DIR}/vendor/sustrik/libdill/.libs/libdill.a
+		-pthread -lrt)
+add_dependencies(gridinit
+		libdill_s)
+
+
+add_executable(gridinit_cmd
+		main/gridinit_cmd.c
+		main/format_output.c
+		main/utils.c)
+target_link_libraries(gridinit_cmd ${GLIB2_LIBRARIES})
+
+install(TARGETS gridinit gridinit_cmd
+		RUNTIME DESTINATION bin)

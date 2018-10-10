@@ -3,10 +3,8 @@ dist: trusty
 language: c
 install:
   - sudo apt-add-repository "deb http://archive.ubuntu.com/ubuntu trusty-backports main restricted universe multiverse"
-  - curl http://mirror.openio.io/pub/repo/openio/APT-GPG-KEY-OPENIO-0 | sudo apt-key add -
-  - sudo apt-add-repository "deb http://mirror.openio.io/pub/repo/openio/sds/17.04/ubuntu/trusty ./"
   - sudo apt-get update -qq
-  - sudo apt-get install -y --force-yes libevent-2.0-5 libevent-dev make cmake libglib2.0-dev
+  - sudo apt-get install -y --force-yes autoconf automake libtool xutils-dev gcc make cmake libglib2.0-dev
 env:
   matrix:
     - BUILD_TYPE=Debug
@@ -16,5 +14,5 @@ script:
   - mkdir /tmp/oio
   - export CMAKE_OPTS='-DCMAKE_INSTALL_PREFIX=/tmp/oio -DLD_LIBDIR=lib'
   - cmake ${CMAKE_OPTS} -DCMAKE_BUILD_TYPE=$BUILD_TYPE .
-  - make -j 4 all
+  - make all
   - make install
