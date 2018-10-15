@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 2.8)
 project (GridInit C)
 
 include(CheckIncludeFile)
@@ -7,7 +7,7 @@ include(CheckTypeSize)
 
 set(GridInit_VERSION_MAJOR 2)
 set(GridInit_VERSION_MINOR 0)
-set(GridInit_RELEASE 1)
+set(GridInit_RELEASE 2)
 set(API_VERSION "${GridInit_VERSION_MAJOR}.${GridInit_VERSION_MINOR}.${GridInit_RELEASE}")
 set(SHORT_API_VERSION "${GridInit_VERSION_MAJOR}.${GridInit_VERSION_MINOR}")
 
