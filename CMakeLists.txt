@@ -1,18 +1,15 @@
-cmake_minimum_required(VERSION 2.6)
+cmake_minimum_required(VERSION 3.0)
 project (GridInit C)
 
 include(CheckIncludeFile)
 include(CheckLibraryExists)
 include(CheckTypeSize)
 
-set(GridInit_VERSION_MAJOR 1)
-set(GridInit_VERSION_MINOR 1)
-set(GridInit_RELEASE 5)
+set(GridInit_VERSION_MAJOR 2)
+set(GridInit_VERSION_MINOR 0)
+set(GridInit_RELEASE 1)
 set(API_VERSION "${GridInit_VERSION_MAJOR}.${GridInit_VERSION_MINOR}.${GridInit_RELEASE}")
 set(SHORT_API_VERSION "${GridInit_VERSION_MAJOR}.${GridInit_VERSION_MINOR}")
-if (NOT ABI_VERSION)
-	set(ABI_VERSION 0)
-endif()
 
 add_definitions(-DAPI_VERSION="${API_VERSION}")
 add_definitions(-DSHORT_API_VERSION="${SHORT_API_VERSION}")
@@ -129,7 +126,6 @@ add_dependencies(gridinit
 
 add_executable(gridinit_cmd
 		main/gridinit_cmd.c
-		main/format_output.c
 		main/utils.c)
 target_link_libraries(gridinit_cmd ${GLIB2_LIBRARIES})
 
