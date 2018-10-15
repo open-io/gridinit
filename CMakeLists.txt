@@ -126,7 +126,6 @@ add_dependencies(gridinit
 
 add_executable(gridinit_cmd
 		main/gridinit_cmd.c
-		main/format_output.c
 		main/utils.c)
 target_link_libraries(gridinit_cmd ${GLIB2_LIBRARIES})
 

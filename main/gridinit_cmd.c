@@ -29,7 +29,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <glib.h>
 
-#include "./format_output.h"
 #include "./gridinit_internals.h"
 
 #define MINI 0
@@ -147,6 +146,21 @@ static const gchar description[] =
 	"            restart the process.\n"
 	"with ID the key of a process, or '@GROUP', with GROUP the name of a process\n"
 	"group\n";
+
+typedef enum FORMAT FORMAT;
+
+enum FORMAT {DEFAULT = 0, CSV = 1, JSON = 2};
+
+static FORMAT
+parse_format(const gchar *cfg_format)
+{
+	if (g_strcmp0(cfg_format, "json") == 0)
+		return JSON;
+	if (g_strcmp0(cfg_format, "csv") == 0)
+		return CSV;
+	else
+		return DEFAULT;
+}
 
 
 static int
@@ -292,8 +306,19 @@ dump_as_is(FILE *in_stream, void *udata)
 	else
 		kw = &KEYWORDS_NORMAL;
 
-	print_header(format_t);
+	/* Prin tthe title */
+	switch (format_t) {
+		case JSON:
+			fputs("[", stdout);
+			break;
+		case CSV:
+			fputs("status,start,error\n", stdout);
+			/* FALLTHROUGH */
+		default:
+			break;
+	}
 
+	/* Print the lines */
 	while (!feof(in_stream) && !ferror(in_stream)) {
 		bzero(line, sizeof(line));
 		if (NULL != fgets(line, sizeof(line), in_stream)) {
@@ -308,13 +333,27 @@ dump_as_is(FILE *in_stream, void *udata)
 					dump_args->count_errors ++;
 			}
 			gchar *status = (gchar *) (code==0 ? kw->done :
-						   (code==EALREADY?kw->already:kw->failed));
-			gchar *error = strerror(code);
-			print_body(format_t, status, start, error,first);
+					(code==EALREADY?kw->already:kw->failed));
+			const char *error = strerror(code);
+
+			switch (format_t) {
+				case JSON:
+					if(!first)
+						fprintf(stdout, ",\n");
+					fprintf(stdout, "{\"status\": \"%s\",\"start\": \"%s\",\"error\": \"%s\"}\n", status, start, error);
+					break;
+				case CSV:
+					fprintf(stdout, "%s,%s,%s\n", status, start, error);
+					break;
+				default:
+					fprintf(stdout, "%s\t%s\t%s\n", status, start, error);
+			}
 			first = FALSE;
 		}
 	}
-	print_footer(format_t);
+
+	if (format_t == JSON)
+		fputs("]", stdout);
 	fflush(stdout);
 }
 
@@ -410,7 +449,7 @@ _filter_services(GList *original, char **filters, int *counters)
 static int
 command_status(int lvl, int argc, char **args)
 {
-	char fmt_title[256], fmt_line[256];
+	char fmt_line[256];
 
 	int *counters = alloca(sizeof(int) * (argc+1));
 	memset(counters, 0, sizeof(int) * (argc+1));
@@ -418,52 +457,58 @@ command_status(int lvl, int argc, char **args)
 	GList *all_jobs = _fetch_services();
 	GList *jobs = _filter_services(all_jobs, args, counters);
 	FORMAT format_t = parse_format(format);
-	/* compute the max length of several variable field, for well aligned
-	 * columns on the output. */
-	const size_t maxkey = get_longest_key(jobs);
-	const size_t maxgroup = get_longest_group(jobs);
 
-	if (format_t != DEFAULT) {
-		print_status_header(format_t);
-		get_line_format(format_t, fmt_line, sizeof(fmt_line));
-		goto print_lines;
+	/* Print the header and compute the format for each line */
+	if (format_t == DEFAULT) {
+		const size_t maxkey = get_longest_key(jobs);
+		const size_t maxgroup = get_longest_group(jobs);
+		char fmt_title[256];
+		switch (lvl) {
+			case 0:
+				g_snprintf(fmt_title, sizeof(fmt_title),
+						"%%-%us %%-8s %%6s %%s\n",
+						(guint)maxkey);
+				g_snprintf(fmt_line, sizeof(fmt_line),
+						"%%-%us %%s %%6d %%s\n",
+						(guint)maxkey);
+				fprintf(stdout, fmt_title, "KEY", "STATUS", "PID", "GROUP");
+				break;
+			case 1:
+				g_snprintf(fmt_title, sizeof(fmt_title),
+						"%%-%us %%-8s %%5s %%6s %%5s %%19s %%%us %%s\n",
+						(guint)maxkey, (guint)maxgroup);
+				g_snprintf(fmt_line, sizeof(fmt_line),
+						"%%-%us %%s %%5d %%6d %%5d %%19s %%%us %%s\n",
+						(guint)maxkey, (guint)maxgroup);
+				fprintf(stdout, fmt_title, "KEY", "STATUS", "PID", "#START",
+						"#DIED", "SINCE", "GROUP", "CMD");
+				break;
+			default:
+				g_snprintf(fmt_title, sizeof(fmt_title),
+						"%%-%us %%-8s %%5s %%6s %%5s %%8s %%8s %%8s %%19s %%%us %%s\n",
+						(guint)maxkey, (guint)maxgroup);
+				g_snprintf(fmt_line, sizeof(fmt_line),
+						"%%-%us %%s %%5d %%6d %%5d %%8ld %%8ld %%8ld %%19s %%%us %%s\n",
+						(guint)maxkey, (guint)maxgroup);
+
+				fprintf(stdout, fmt_title, "KEY", "STATUS", "PID", "#START",
+						"#DIED", "CSZ", "SSZ", "MFD", "SINCE", "GROUP", "CMD");
+				break;
+		}
+	} else if (format_t == CSV) {
+		g_snprintf(fmt_line, sizeof(fmt_line),
+				"%%s,%%s,%%d,%%d,%%d,%%ld,%%ld,%%ld,%%s,%%s,%%s\n");
+		/* Print the title */
+		fputs("key,status,pid,#start,#died,csz,ssz,mfd,since,group,cmd\n", stdout);
+	} else if (format_t == JSON) {
+		g_snprintf(fmt_line, sizeof(fmt_line),
+				"{\"key\":\"%%s\",\"status\":\"%%s\",\"pid\":%%d,"
+				"\"#start\":%%d,\"#died\":%%d,\"csz\":%%ld,\"ssz\":%%ld,\"mfd\":%%ld,"
+				"\"since\":\"%%s\",\"group\":\"%%s\","
+				"\"cmd\":\"%%s\"}\n");
+		/* Print the opening of the object */
+		fputs("[", stdout);
 	}
-
-	/* write the title */
-	switch (lvl) {
-	case 0:
-		g_snprintf(fmt_title, sizeof(fmt_title),
-				"%%-%us %%-8s %%6s %%s\n",
-				(guint)maxkey);
-		g_snprintf(fmt_line, sizeof(fmt_line),
-				"%%-%us %%s %%6d %%s\n",
-				(guint)maxkey);
-		fprintf(stdout, fmt_title, "KEY", "STATUS", "PID", "GROUP");
-		break;
-	case 1:
-		g_snprintf(fmt_title, sizeof(fmt_title),
-				"%%-%us %%-8s %%5s %%6s %%5s %%19s %%%us %%s\n",
-				(guint)maxkey, (guint)maxgroup);
-		g_snprintf(fmt_line, sizeof(fmt_line),
-				"%%-%us %%s %%5d %%6d %%5d %%19s %%%us %%s\n",
-				(guint)maxkey, (guint)maxgroup);
-		fprintf(stdout, fmt_title, "KEY", "STATUS", "PID", "#START",
-				"#DIED", "SINCE", "GROUP", "CMD");
-		break;
-	default:
-		g_snprintf(fmt_title, sizeof(fmt_title),
-				"%%-%us %%-8s %%5s %%6s %%5s %%8s %%8s %%8s %%19s %%%us %%s\n",
-				(guint)maxkey, (guint)maxgroup);
-		g_snprintf(fmt_line, sizeof(fmt_line),
-				"%%-%us %%s %%5d %%6d %%5d %%8ld %%8ld %%8ld %%19s %%%us %%s\n",
-				(guint)maxkey, (guint)maxgroup);
-
-		fprintf(stdout, fmt_title, "KEY", "STATUS", "PID", "#START",
-				"#DIED", "CSZ", "SSZ", "MFD", "SINCE", "GROUP", "CMD");
-		break;
-	}
-
- print_lines:;
 
 	int count_misses = 0, count_broken = 0, count_down = 0, count_all = 0;
 
@@ -479,56 +524,55 @@ command_status(int lvl, int argc, char **args)
 	for (GList *l=jobs; l ;l=l->next) {
 		char str_time[20] = "---------- --------";
 		const char * str_status = "-";
-		struct child_info_s *ci = NULL;
-
-		ci = l->data;
+		struct child_info_s *ci = ci = l->data;
 
 		/* Prepare some fields */
-		if (ci->pid > 0)
-			strftime(str_time, sizeof(str_time), "%Y-%m-%d %H:%M:%S",
+		strftime(str_time, sizeof(str_time), "%Y-%m-%d %H:%M:%S",
 				gmtime(&(ci->last_start_attempt)));
 		str_status = get_child_status(ci, kw);
 
 		/* Manage counters */
-
 		if (str_status == kw->down)
 			count_down ++;
 		if (str_status == kw->broken)
 			count_broken ++;
 		count_all ++;
+
 		/* Print now! */
 		if (format_t != DEFAULT) {
-			print_status_sep(format_t, count_all-1);
+			if (format_t == JSON && count_all > 1)
+				fputs(",", stdout);
 
 			fprintf(stdout, fmt_line, ci->key, str_status, ci->pid,
 				ci->counter_started, ci->counter_died,
 				ci->rlimits.core_size, ci->rlimits.stack_size,
 				ci->rlimits.nb_files, str_time, ci->group, ci->cmd);
-			goto end;
+		} else {
+			switch (lvl) {
+				case 0:
+					fprintf(stdout, fmt_line, ci->key, str_status, ci->pid, ci->group);
+					break;
+				case 1:
+					fprintf(stdout, fmt_line,
+							ci->key, str_status, ci->pid,
+							ci->counter_started, ci->counter_died,
+							str_time, ci->group, ci->cmd);
+					break;
+				default:
+					fprintf(stdout, fmt_line,
+							ci->key, str_status, ci->pid,
+							ci->counter_started, ci->counter_died,
+							ci->rlimits.core_size, ci->rlimits.stack_size, ci->rlimits.nb_files,
+							str_time, ci->group, ci->cmd);
+					break;
+			}
 		}
-		switch (lvl) {
-			case 0:
-				fprintf(stdout, fmt_line, ci->key, str_status, ci->pid, ci->group);
-				break;
-			case 1:
-				fprintf(stdout, fmt_line,
-					ci->key, str_status, ci->pid,
-					ci->counter_started, ci->counter_died,
-					str_time, ci->group, ci->cmd);
-				break;
-			default:
-				fprintf(stdout, fmt_line,
-					ci->key, str_status, ci->pid,
-					ci->counter_started, ci->counter_died,
-					ci->rlimits.core_size, ci->rlimits.stack_size, ci->rlimits.nb_files,
-					str_time, ci->group, ci->cmd);
-				break;
-		}
-	end:;
 	}
+	g_list_free_full(all_jobs, (GDestroyNotify)child_info_free);
+	g_list_free(jobs);
 
-	if (format_t != DEFAULT)
-		print_footer(format_t);
+	if (format_t == JSON)
+		fputs("]", stdout);
 	fflush(stdout);
 
 	/* If patterns have been specified, we must find items (the user
@@ -537,20 +581,7 @@ command_status(int lvl, int argc, char **args)
 		if (!counters[i])
 			count_misses ++;
 	}
-
-	g_list_free_full(all_jobs, (GDestroyNotify)child_info_free);
-	g_list_free(jobs);
-
-	int rc = 0;
-
-	if (count_down)
-		rc |= 1;
-	if (count_misses)
-		rc |= 2;
-	if (count_broken)
-		rc |= 4;
-
-	return rc;
+	return (count_down ? 1 : 0) | (count_misses ? 2 : 0) | (count_broken ? 4 : 0);
 }
 
 
