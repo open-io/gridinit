@@ -2,9 +2,8 @@ sudo: required
 dist: trusty
 language: c
 install:
-  - sudo apt-add-repository "deb http://archive.ubuntu.com/ubuntu trusty-backports main restricted universe multiverse"
-  - sudo apt-get update -qq
-  - sudo apt-get install -y --force-yes autoconf automake libtool xutils-dev gcc make cmake libglib2.0-dev
+  - sudo apt-get install -y --force-yes gcc make cmake libglib2.0-dev
+  - sudo apt-get install -y --force-yes autoconf automake libtool xutils-dev
 env:
   matrix:
     - BUILD_TYPE=Debug
