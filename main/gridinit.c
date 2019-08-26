@@ -512,7 +512,8 @@ _client_run(int ch, int ldh_client)
 static dill_coroutine void
 _server_run(int ch, const char *path)
 {
-	int workers = dill_bundle();
+	struct dill_bundle_storage bundle_storage = {};
+	int workers = dill_bundle_mem(&bundle_storage);
 	g_assert(workers >= 0);
 
 	int ldh_server = dill_ipc_listen(path, 1024);
@@ -525,7 +526,7 @@ _server_run(int ch, const char *path)
 	DEBUG("Initiated a server socket on [%s] h=%d", sock_path, ldh_server);
 
 	while (flag_running) {
-		int ldh_client = dill_ipc_accept(ldh_server, dill_now() + 30000);
+		int ldh_client = dill_ipc_accept(ldh_server, dill_now() + 1000);
 		if (ldh_client >= 0) {
 			TRACE("Client accepted h=%d", ldh_client);
 			dill_bundle_go(workers, _client_run(ch, ldh_client));
@@ -538,8 +539,10 @@ _server_run(int ch, const char *path)
 	int rc = dill_hclose(ldh_server);
 	g_assert(rc == 0);
 
-	dill_bundle_wait(workers, dill_now() + 30000);
+	dill_bundle_wait(workers, -1);
 	dill_hclose(workers);
+
+	unlink(path);
 }
 
 static void
