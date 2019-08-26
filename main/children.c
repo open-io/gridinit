@@ -387,7 +387,7 @@ _child_start(struct child_s *sd, void *udata, supervisor_cb_f cb)
 	typeof(errno) errsav;
 	gint argc;
 	gchar **args;
-	struct my_rlimits_s saved_limits;
+	struct my_rlimits_s saved_limits = {};
 
 	if (!sd || !sd->command) {
 		errno = EINVAL;
@@ -398,8 +398,6 @@ _child_start(struct child_s *sd, void *udata, supervisor_cb_f cb)
 		errno = EINVAL;
 		return -1;
 	}
-
-	bzero(&saved_limits, sizeof(saved_limits));
 
 	sd->last_start_attempt = _monotonic_seconds();
 	sd->last_start = time(0);
@@ -789,7 +787,7 @@ supervisor_children_register(const gchar *key, const gchar *cmd)
 		return FALSE;
 	}
 
-	g_strlcpy(sd->key, key, sizeof(sd->key)-1);
+	g_strlcpy(sd->key, key, sizeof(sd->key));
 	sd->delay_before_KILL = supervisor_default_delay_KILL;
 	sd->flags = MASK_STARTED|MASK_RESPAWN|MASK_DELAYED;
 	sd->working_directory = g_get_current_dir();
@@ -1134,9 +1132,11 @@ supervisor_children_set_group(const gchar *key, const gchar *group)
 		return -1;
 	}
 
-	bzero(sd->group, sizeof(sd->group));
-	if (group)
-		g_strlcpy(sd->group, group, sizeof(sd->group)-1);
+	if (group) {
+		g_strlcpy(sd->group, group, sizeof(sd->group));
+	} else {
+		memset(sd->group, 0, sizeof(sd->group));
+	}
 	errno = 0;
 	return 0;
 }
