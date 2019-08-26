@@ -1557,6 +1557,9 @@ label_exit:
 	supervisor_children_fini();
 
 	g_free(config_path);
+	if (*pidfile_path) {
+		unlink(pidfile_path);
+	}
 	closelog();
 	return rc;
 }
