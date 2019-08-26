@@ -357,7 +357,14 @@ _child_exec(struct child_s *sd, int argc, char ** args)
 	/* If the target command is just a filename, then try to find
 	 * it in the PATH that could have been set for this command */
 	env = _child_build_env(sd);
-	supervisor_children_cleanall();
+
+	/* JFS: No need to free the allocated memory of gridinit, execve will do. */
+	/* supervisor_children_cleanall(); */
+
+	/* JFS: the internal sockets of libdill do not carry the O_CLOEXEC flag.
+	 *      We want to avoid any FD leak to the children. */
+	for (int i=3; i<8; i++)
+		close(i);
 
 	if (g_path_is_absolute(cmd))
 		real_cmd = g_strdup(cmd);
