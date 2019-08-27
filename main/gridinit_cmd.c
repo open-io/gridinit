@@ -31,6 +31,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "./gridinit_internals.h"
 
+#define UNUSED __attribute__ ((unused))
+
 #define MINI 0
 #define MEDIUM 1
 
@@ -379,40 +381,40 @@ open_cnx(void)
 static int
 send_commandv(void (*dumper)(FILE *, void*), void *udata, const char *cmd, int argc, char **args)
 {
-	FILE *req_stream;
-	if (NULL != (req_stream = open_cnx())) {
-		fputs(cmd, req_stream);
-		fputc(' ', req_stream);
-		for (int i=0; i<argc ;i++) {
-			fputs(args[i], req_stream);
-			fputc(' ', req_stream);
-		}
-		fputc('\n', req_stream);
-
-		fflush(req_stream);
-		dumper(req_stream, udata);
-		fclose(req_stream);
+	FILE *req_stream = open_cnx();
+	if (!req_stream)
 		return 1;
-	}
 
+	fputs(cmd, req_stream);
+	fputc(' ', req_stream);
+	for (int i=0; i<argc ;i++) {
+		fputs(args[i], req_stream);
+		fputc(' ', req_stream);
+	}
+	fputc('\n', req_stream);
+
+	fflush(req_stream);
+	dumper(req_stream, udata);
+	fclose(req_stream);
 	return 0;
 }
 
-static GList *
-_fetch_services(void)
+static int
+_fetch_services(GList **out)
 {
 	GList *jobs = NULL;
-	void _on_reply(FILE *in_stream, void *udata) {
-		(void) udata;
+	void _on_reply(FILE *in_stream, void *udata UNUSED) {
 		jobs = read_services_list(in_stream);
 	}
 
 	int rc = send_commandv(_on_reply, NULL, "status", 0, (char*[]){NULL});
-	if (!rc) {
+	if (rc != 0) {
 		g_list_free_full(jobs, (GDestroyNotify)child_info_free);
-		return NULL;
+		*out = NULL;
+		return 1;
 	} else {
-		return jobs;
+		*out = jobs;
+		return 0;
 	}
 }
 
@@ -454,7 +456,10 @@ command_status(int lvl, int argc, char **args)
 	int *counters = alloca(sizeof(int) * (argc+1));
 	memset(counters, 0, sizeof(int) * (argc+1));
 
-	GList *all_jobs = _fetch_services();
+	GList *all_jobs = NULL;
+	if (0 != _fetch_services(&all_jobs))
+		return 1;
+
 	GList *jobs = _filter_services(all_jobs, args, counters);
 	FORMAT format_t = parse_format(format);
 
@@ -609,7 +614,7 @@ command_start(int argc, char **args)
 	struct dump_as_is_arg_s dump_args = {};
 
 	int rc = send_commandv(dump_as_is, &dump_args, "start", argc, args);
-	return !rc
+	return rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
 }
@@ -620,35 +625,44 @@ command_kill(int argc, char **args)
 	struct dump_as_is_arg_s dump_args = {};
 
 	int rc = send_commandv(dump_as_is, &dump_args, "stop", argc, args);
-	return !rc
+	return rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
+}
+
+static gboolean
+_all_down(char **args, gboolean *down)
+{
+	GList *all_jobs = NULL;
+	if (0 != _fetch_services(&all_jobs))
+		return FALSE;
+
+	GList *jobs = _filter_services(all_jobs, args, NULL);
+	for (GList *l = jobs; l ;l=l->next) {
+		struct child_info_s *ci = l->data;
+		if (ci->pid > 0)
+			*down = FALSE;
+	}
+	g_list_free_full(all_jobs, (GDestroyNotify)child_info_free);
+	g_list_free(jobs);
+	return TRUE;
 }
 
 static int
 command_stop(int argc, char **args)
 {
-	gboolean _all_down(void) {
-		gboolean rc = TRUE;
-		GList *all_jobs = _fetch_services();
-		GList *jobs = _filter_services(all_jobs, args, NULL);
-		for (GList *l = jobs; l ;l=l->next) {
-			struct child_info_s *ci = l->data;
-			if (ci->pid > 0)
-				rc = FALSE;
-		}
-		g_list_free_full(all_jobs, (GDestroyNotify)child_info_free);
-		g_list_free(jobs);
-		return rc;
-	}
 	FORMAT format_t = parse_format(format);
-	while (!_all_down()) {
+	for (;;) {
+		gboolean d = TRUE;
+		if (!_all_down(args, &d))
+			return 1;
+		if (d)
+			return 0;
 		/* If standart output format*/
 		if (format_t != DEFAULT)
 			g_print("# Stopping...\n");
-		int rc = command_kill(argc, args);
-		if (rc != 0)
-			return rc;
+		if (0 != command_kill(argc, args))
+			return 1;
 		g_usleep(G_TIME_SPAN_SECOND);
 	}
 	return 0;
@@ -660,7 +674,7 @@ command_restart(int argc, char **args)
 	struct dump_as_is_arg_s dump_args = {};
 
 	int rc = send_commandv(dump_as_is, &dump_args, "restart", argc, args);
-	return !rc
+	return rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
 }
@@ -671,19 +685,18 @@ command_repair(int argc, char **args)
 	struct dump_as_is_arg_s dump_args = {};
 
 	int rc = send_commandv(dump_as_is, &dump_args, "repair", argc, args);
-	return !rc
+	return rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
 }
 
 static int
-command_reload(int argc, char **args)
+command_reload(int argc UNUSED, char **args UNUSED)
 {
 	struct dump_as_is_arg_s dump_args = {};
-	(void) argc, (void) args;
 
 	int rc = send_commandv(dump_as_is, &dump_args, "reload", 0, (char*[]){NULL});
-	return !rc
+	return rc
 		|| dump_args.count_errors != 0
 		|| dump_args.count_success == 0;
 }

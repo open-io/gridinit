@@ -357,7 +357,14 @@ _child_exec(struct child_s *sd, int argc, char ** args)
 	/* If the target command is just a filename, then try to find
 	 * it in the PATH that could have been set for this command */
 	env = _child_build_env(sd);
-	supervisor_children_cleanall();
+
+	/* JFS: No need to free the allocated memory of gridinit, execve will do. */
+	/* supervisor_children_cleanall(); */
+
+	/* JFS: the internal sockets of libdill do not carry the O_CLOEXEC flag.
+	 *      We want to avoid any FD leak to the children. */
+	for (int i=3; i<8; i++)
+		close(i);
 
 	if (g_path_is_absolute(cmd))
 		real_cmd = g_strdup(cmd);
@@ -380,7 +387,7 @@ _child_start(struct child_s *sd, void *udata, supervisor_cb_f cb)
 	typeof(errno) errsav;
 	gint argc;
 	gchar **args;
-	struct my_rlimits_s saved_limits;
+	struct my_rlimits_s saved_limits = {};
 
 	if (!sd || !sd->command) {
 		errno = EINVAL;
@@ -391,8 +398,6 @@ _child_start(struct child_s *sd, void *udata, supervisor_cb_f cb)
 		errno = EINVAL;
 		return -1;
 	}
-
-	bzero(&saved_limits, sizeof(saved_limits));
 
 	sd->last_start_attempt = _monotonic_seconds();
 	sd->last_start = time(0);
@@ -782,7 +787,7 @@ supervisor_children_register(const gchar *key, const gchar *cmd)
 		return FALSE;
 	}
 
-	g_strlcpy(sd->key, key, sizeof(sd->key)-1);
+	g_strlcpy(sd->key, key, sizeof(sd->key));
 	sd->delay_before_KILL = supervisor_default_delay_KILL;
 	sd->flags = MASK_STARTED|MASK_RESPAWN|MASK_DELAYED;
 	sd->working_directory = g_get_current_dir();
@@ -1127,9 +1132,11 @@ supervisor_children_set_group(const gchar *key, const gchar *group)
 		return -1;
 	}
 
-	bzero(sd->group, sizeof(sd->group));
-	if (group)
-		g_strlcpy(sd->group, group, sizeof(sd->group)-1);
+	if (group) {
+		g_strlcpy(sd->group, group, sizeof(sd->group));
+	} else {
+		memset(sd->group, 0, sizeof(sd->group));
+	}
 	errno = 0;
 	return 0;
 }

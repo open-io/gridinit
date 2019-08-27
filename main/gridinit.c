@@ -512,7 +512,8 @@ _client_run(int ch, int ldh_client)
 static dill_coroutine void
 _server_run(int ch, const char *path)
 {
-	int workers = dill_bundle();
+	struct dill_bundle_storage bundle_storage = {};
+	int workers = dill_bundle_mem(&bundle_storage);
 	g_assert(workers >= 0);
 
 	int ldh_server = dill_ipc_listen(path, 1024);
@@ -525,7 +526,7 @@ _server_run(int ch, const char *path)
 	DEBUG("Initiated a server socket on [%s] h=%d", sock_path, ldh_server);
 
 	while (flag_running) {
-		int ldh_client = dill_ipc_accept(ldh_server, dill_now() + 30000);
+		int ldh_client = dill_ipc_accept(ldh_server, dill_now() + 1000);
 		if (ldh_client >= 0) {
 			TRACE("Client accepted h=%d", ldh_client);
 			dill_bundle_go(workers, _client_run(ch, ldh_client));
@@ -538,8 +539,10 @@ _server_run(int ch, const char *path)
 	int rc = dill_hclose(ldh_server);
 	g_assert(rc == 0);
 
-	dill_bundle_wait(workers, dill_now() + 30000);
+	dill_bundle_wait(workers, -1);
 	dill_hclose(workers);
+
+	unlink(path);
 }
 
 static void
@@ -759,9 +762,7 @@ _group_is_accepted(gchar *str_key, gchar *str_group)
 static gboolean
 _service_exists(const gchar *key)
 {
-	struct child_info_s ci;
-
-	bzero(&ci, sizeof(ci));
+	struct child_info_s ci = {};
 	return 0 == supervisor_children_get_info(key, &ci);
 }
 
@@ -967,39 +968,33 @@ _cfg_section_default(GKeyFile *kf, const gchar *section, GError **err)
 		else if (!g_ascii_strcasecmp(*p_key, CFG_KEY_PATH_WORKINGDIR)) {
 			if (!g_file_test(*p_key, G_FILE_TEST_IS_DIR|G_FILE_TEST_IS_EXECUTABLE))
 				WARN("Default working directory does not exist yet [%s]", *p_key);
-			bzero(default_working_directory, sizeof(default_working_directory));
-			g_strlcpy(default_working_directory, str, sizeof(default_working_directory)-1);
+			g_strlcpy(default_working_directory, str, sizeof(default_working_directory));
 		}
 		else if (!g_ascii_strcasecmp(*p_key, CFG_KEY_PATH_PIDFILE)) {
-			bzero(pidfile_path, sizeof(pidfile_path));
-			g_strlcpy(pidfile_path, str, sizeof(pidfile_path)-1);
+			g_strlcpy(pidfile_path, str, sizeof(pidfile_path));
 		}
 		else if (!g_ascii_strcasecmp(*p_key, CFG_KEY_LISTEN)) {
-			if (str[0] == '/')
+			if (str[0] == '/') {
 				g_strlcpy(sock_path, str, sizeof(sock_path));
-			else
+			} else {
 				g_printerr("section=%s, key=listen : not a UNIX path, ignored! [%s]\n",
 					section, str);
+			}
 		}
 		else if (!g_ascii_strcasecmp(*p_key, CFG_KEY_USER)) {
-			bzero(buf_user, sizeof(buf_user));
-			g_strlcpy(buf_user, str, sizeof(buf_user)-1);
+			g_strlcpy(buf_user, str, sizeof(buf_user));
 		}
 		else if (!g_ascii_strcasecmp(*p_key, CFG_KEY_GROUP)) {
-			bzero(buf_group, sizeof(buf_group));
-			g_strlcpy(buf_group, str, sizeof(buf_group)-1);
+			g_strlcpy(buf_group, str, sizeof(buf_group));
 		}
 		else if (!g_ascii_strcasecmp(*p_key, CFG_KEY_UID)) {
-			bzero(buf_uid, sizeof(buf_uid));
-			g_strlcpy(buf_uid, str, sizeof(buf_uid)-1);
+			g_strlcpy(buf_uid, str, sizeof(buf_uid));
 		}
 		else if (!g_ascii_strcasecmp(*p_key, CFG_KEY_GID)) {
-			bzero(buf_gid, sizeof(buf_gid));
-			g_strlcpy(buf_gid, str, sizeof(buf_gid)-1);
+			g_strlcpy(buf_gid, str, sizeof(buf_gid));
 		}
 		else if (!g_ascii_strcasecmp(*p_key, CFG_KEY_INCLUDES)) {
-			bzero(buf_includes, sizeof(buf_includes));
-			g_strlcpy(buf_includes, str, sizeof(buf_includes)-1);
+			g_strlcpy(buf_includes, str, sizeof(buf_includes));
 		}
 		else if (!g_ascii_strcasecmp(*p_key, CFG_KEY_GROUPSONLY)) {
 			_str_set_array(FALSE, &groups_only_cfg, str);
@@ -1175,11 +1170,7 @@ label_exit:
 static guint16
 compute_thread_id(GThread *thread)
 {
-	union {
-		void *p;
-		guint16 u[4];
-	} bulk;
-	memset(&bulk, 0, sizeof(bulk));
+	union { void *p; guint16 u[4]; } bulk = {};
 	bulk.p = thread;
 	return (bulk.u[0] ^ bulk.u[1]) ^ (bulk.u[2] ^ bulk.u[3]);
 }
@@ -1395,11 +1386,10 @@ static gboolean
 is_gridinit_running(const gchar *path)
 {
 	int rc, usock;
-	struct sockaddr_un sun;
+	struct sockaddr_un sun = {};
 
-	bzero(&sun, sizeof(sun));
 	sun.sun_family = AF_UNIX;
-	g_strlcpy(sun.sun_path, path, sizeof(sun.sun_path) - 1);
+	g_strlcpy(sun.sun_path, path, sizeof(sun.sun_path));
 
 	if (0 > (usock = socket(PF_UNIX, SOCK_STREAM, 0)))
 		return FALSE;
@@ -1554,6 +1544,9 @@ label_exit:
 	supervisor_children_fini();
 
 	g_free(config_path);
+	if (*pidfile_path) {
+		unlink(pidfile_path);
+	}
 	closelog();
 	return rc;
 }
