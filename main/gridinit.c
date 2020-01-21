@@ -393,7 +393,6 @@ command_signal(GString *out, int argc, char **argv)
 	str_signal = argv[0];
 	argv++;
 	argc--;
-	g_string_append_printf(out, "START signal\n");
 
 	// first we try to convert the string to an integer
 	signal = strtol(str_signal, NULL, 10); // TODO should we autodetect the base?
