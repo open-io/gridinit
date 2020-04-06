@@ -1,0 +1,132 @@
+#!/usr/bin/env python3
+
+# gridinit, a monitor for non-daemon processes.
+# Copyright (C) 2015-2020 OpenIO SAS
+# 
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+# 
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#
+# This program intends to run a program and logs its stdout/stderr to both 
+# syslog and local console
+#
+
+import sys
+import os
+import signal
+import logging
+from logging.handlers import SysLogHandler
+from logging import StreamHandler
+import argparse
+
+#
+# Manage args
+#
+parser = argparse.ArgumentParser()
+parser.add_argument("-f", "--facility", type=str, default="daemon", help="syslog facility (daemon)")
+parser.add_argument("-p", "--pid", action='store_true', help="log pid (yes)")
+parser.add_argument("-i", "--ident", type=str, help="specify logging ident (program name)")
+parser.add_argument("program", type=str, help="program to run")
+parser.add_argument("args", type=str, nargs='*', help="program arguments")
+args = parser.parse_args()
+
+
+#
+# ARGS
+#
+if not args.ident:
+  args.ident = os.path.basename(args.program)
+
+if args.pid:
+  ident = "%s[%d]" % (args.ident , os.getpid())
+else:
+  ident = args.ident
+
+#
+# Prepare logging
+#
+log = logging.getLogger('syslog')
+log.setLevel(logging.DEBUG)
+syslog_handler = SysLogHandler(address = '/dev/log', facility = args.facility)
+syslog_handler.ident = "%s: " % ident
+log.addHandler(syslog_handler)
+
+stdout_handler = StreamHandler(stream=sys.stdout)
+stdout_handler.setFormatter(logging.Formatter('%(asctime)s %(message)s'))
+log.addHandler(stdout_handler)
+
+#
+# Fork
+#
+(pipe_r, pipe_w) = os.pipe()
+pid = os.fork()
+if pid == 0:
+  #
+  # Children
+  #
+
+  # close useless pipe
+  os.close(pipe_r)
+
+  # reopen stdout/stderr into the pipe to the parent process
+  os.dup2(pipe_w, sys.stdout.fileno())
+  os.dup2(pipe_w, sys.stderr.fileno())
+
+  # exec the program
+  os.execv(args.program, [os.path.basename(args.program)] + args.args)
+
+  # sould never happen
+  sys.exit(1)
+
+#
+# Parent
+#
+
+# close useless pipe
+os.close(pipe_w)
+
+# open usefull pipe :)
+stdin = open(pipe_r, 'r')
+
+#
+# forward all signals to the child process
+#
+def sendToChildren(signum, frame):
+  os.kill(pid, signum)
+for s in [signal.SIGTERM, signal.SIGINT, signal.SIGHUP, signal.SIGUSR1, signal.SIGUSR2, signal.SIGABRT, signal.SIGALRM, signal.SIGCONT, signal.SIGINT]:
+	signal.signal(s, sendToChildren)
+
+#
+# Try to change the process name but don't bother if something goes wrong
+#
+try:
+  from setproctitle import setproctitle
+  setproctitle("%s: %s" % (os.path.basename(sys.argv[0]), args.ident))
+except:
+  pass
+
+#
+# Update the syslog ident with the new child PID
+#
+if args.pid:
+  syslog_handler.ident = "%s[%d]: " % (args.ident , pid)
+
+#
+# Loop forever waiting for child stdout in order to log it
+#
+while True:
+  data = stdin.readline()
+  if not data: break
+  log.info(data.strip())
+sys.exit(0)
