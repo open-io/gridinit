@@ -36,7 +36,7 @@ group=test-$((i%2))
 on_die=respawn
 enabled=true
 start_at_boot=true
-command=/bin/sleep $((i+30))
+command=/bin/sleep "$((i+30))"
 EOF
 done
 
