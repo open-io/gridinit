@@ -1,7 +1,7 @@
 /*
 gridinit, a monitor for non-daemon processes.
 Copyright (C) 2013 AtoS Worldline, original work aside of Redcurrant
-Copyright (C) 2015-2018 OpenIO SAS
+Copyright (C) 2015-2020 OpenIO SAS
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
@@ -291,6 +291,59 @@ read_services_list(FILE *in_stream)
 	return g_list_sort(all_jobs, compare_child_info);
 }
 
+static const gchar json_basic_translations[] =
+{
+	  0,   0,   0,   0,   0,   0,   0,   0,
+	'b', 't', 'n',   0, 'f', 'r',   0,   0,
+};
+
+static gchar * str_to_json_str(const char *s0) {
+	GString *json_str = g_string_new("");
+	int len = strlen(s0);
+	for (const char *s = s0; (len < 0 && *s) || (s - s0) < len ;) {
+		if (*s & (const char)0x80) {  // (part of a) unicode character
+			gunichar c = g_utf8_get_char_validated(s, -1);
+			if (c == (gunichar)-1) {
+				// something wrong happened, let the client deal with it
+				g_string_append_c(json_str, *(s++));
+			} else if (c == (gunichar)-2) {
+				// middle of a unicode character
+				char *end = g_utf8_next_char(s);
+				while (s < end && *s)
+					g_string_append_c(json_str, *(s++));
+			} else {
+				g_string_append_unichar(json_str, c);
+				s = g_utf8_next_char(s);
+			}
+		} else if (*s < ' ') {  // control character
+			g_string_append_c(json_str, '\\');
+			switch (*s) {
+			case '\b':
+			case '\t':
+			case '\n':
+			case '\f':
+			case '\r':
+				g_string_append_c(json_str, json_basic_translations[(int)*(s++)]);
+				break;
+			default:
+				g_string_append_printf(json_str, "u%04x", *(s++));
+				break;
+			}
+		} else {  // printable ASCII character
+			switch (*s) {
+			case '"':
+			case '\\':
+			case '/':
+				g_string_append_c(json_str, '\\');
+				/* FALLTHROUGH */
+			default:
+				g_string_append_c(json_str, *(s++));
+				break;
+			}
+		}
+	}
+	return g_string_free(json_str, FALSE);
+}
 
 static void
 dump_as_is(FILE *in_stream, void *udata)
@@ -342,7 +395,14 @@ dump_as_is(FILE *in_stream, void *udata)
 				case JSON:
 					if(!first)
 						fprintf(stdout, ",\n");
-					fprintf(stdout, "{\"status\": \"%s\",\"start\": \"%s\",\"error\": \"%s\"}\n", status, start, error);
+					gchar *json_str_status = str_to_json_str(status);
+					gchar *json_str_start = str_to_json_str(start);
+					gchar *json_str_error = str_to_json_str(error);
+					fprintf(stdout, "{\"status\": \"%s\",\"start\": \"%s\",\"error\": \"%s\"}\n",
+						json_str_status, json_str_start, json_str_error);
+					g_free(json_str_status);
+					g_free(json_str_start);
+					g_free(json_str_error);
 					break;
 				case CSV:
 					fprintf(stdout, "%s,%s,%s\n", status, start, error);
@@ -548,10 +608,30 @@ command_status(int lvl, int argc, char **args)
 			if (format_t == JSON && count_all > 1)
 				fputs(",", stdout);
 
-			fprintf(stdout, fmt_line, ci->key, str_status, ci->pid,
-				ci->counter_started, ci->counter_died,
-				ci->rlimits.core_size, ci->rlimits.stack_size,
-				ci->rlimits.nb_files, str_time, ci->group, ci->cmd);
+			gchar *json_str_key = NULL;
+			gchar *json_str_status = NULL;
+			gchar *json_str_time = NULL;
+			gchar *json_str_group = NULL;
+			gchar *json_str_cmd = NULL;
+			if (format_t == JSON) {
+				json_str_key = str_to_json_str(ci->key);
+				json_str_status = str_to_json_str(str_status);
+				json_str_time = str_to_json_str(str_time);
+				json_str_group = str_to_json_str(ci->group);
+				json_str_cmd = str_to_json_str(ci->cmd);
+			}
+
+			fprintf(stdout, fmt_line, json_str_key?:ci->key,
+				json_str_status?:str_status, ci->pid, ci->counter_started,
+				ci->counter_died, ci->rlimits.core_size, ci->rlimits.stack_size,
+				ci->rlimits.nb_files, json_str_time?:str_time,
+				json_str_group?:ci->group, json_str_cmd?:ci->cmd);
+
+			g_free(json_str_key);
+			g_free(json_str_status);
+			g_free(json_str_time);
+			g_free(json_str_group);
+			g_free(json_str_cmd);
 		} else {
 			switch (lvl) {
 				case 0:
