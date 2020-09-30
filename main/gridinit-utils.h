@@ -88,6 +88,8 @@ struct child_info_s {
 
 typedef void (supervisor_cb_f) (void *udata, struct child_info_s *ci);
 
+typedef gboolean (supervisor_run_cb_f) (void *udata, struct child_info_s *ci);
+
 
 void supervisor_children_init(void);
 
@@ -143,7 +145,7 @@ int supervisor_children_set_limit(const gchar *key,
 		enum supervisor_limit_e what, gint64 value);
 
 /* Runs the children list and call the callback fnction on each element */
-gboolean supervisor_run_services(void *ptr, supervisor_cb_f callback);
+gint supervisor_run_services(void *ptr, supervisor_run_cb_f callback);
 
 int supervisor_children_set_working_directory(const gchar *key,
 		const gchar *dir);
