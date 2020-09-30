@@ -264,7 +264,7 @@ service_run_groupv(int nb_groups, char **groupv, GString *out, _on_proc_f cb)
 			TRACE("Callback on group [%s]", what);
 			ctx.group = what + 1;
 			gint count = supervisor_run_services(&ctx, _group_filter);
-			if (count > 0 && out) {
+			if (count <= 0 && out) {
 				/* notifies the client the group has not been found */
 				g_string_append_printf(out, "%d %s\n", ENOENT, what);
 			}
