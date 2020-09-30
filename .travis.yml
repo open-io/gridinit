@@ -1,5 +1,5 @@
 sudo: required
-dist: trusty
+dist: bionic
 language: c
 install:
   - sudo apt-get install -y --force-yes gcc make cmake libglib2.0-dev
