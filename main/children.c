@@ -204,19 +204,21 @@ supervisor_children_set_flag(const char *key, guint32 mask, gboolean enabled)
 	return _child_set_flag(sd, mask, enabled);
 }
 
+static long
+i64tolong(gint64 i64)
+{
+	long l;
+	if (i64 >= G_MAXLONG)
+		return G_MAXLONG;
+	if (i64 < 0)
+		return -1L;
+	l = i64;
+	return l;
+}
+
 static void
 _child_get_info(struct child_s *c, struct child_info_s *ci)
 {
-	long i64tolong(gint64 i64) {
-		long l;
-		if (i64 >= G_MAXLONG)
-			return G_MAXLONG;
-		if (i64 < 0)
-			return -1L;
-		l = i64;
-		return l;
-	}
-
 	memset(ci, 0x00, sizeof(*ci));
 	ci->key = c->key;
 	ci->cmd = c->command;
@@ -811,34 +813,32 @@ supervisor_children_register(const gchar *key, const gchar *cmd)
 	return TRUE;
 }
 
-gboolean
-supervisor_run_services(void *udata, supervisor_cb_f callback)
+gint
+supervisor_run_services(void *udata, supervisor_run_cb_f callback)
 {
-	struct child_info_s ci;
 	struct child_s *sd;
+	gint count = 0U;
 
-	if (!callback) {
-		errno = EINVAL;
-		return FALSE;
-	}
+	g_assert_nonnull(callback);
 
 	FOREACH_CHILD(sd) {
+		struct child_info_s ci = {};
 		if (FLAG_HAS(sd, MASK_OBSOLETE))
 			continue;
 		_child_get_info(sd, &ci);
-		callback(udata, &ci);
+		if (callback(udata, &ci)) {
+			count++;
+		}
 	}
 
-	return TRUE;
+	return count;
 }
 
 guint
 supervisor_children_kill_disabled(void)
 {
-	guint count;
 	struct child_s *sd;
-
-	count = 0U;
+	guint count = 0U;
 
 	FOREACH_CHILD(sd) {
 		/* Stop child that needs to be restarted */
@@ -860,12 +860,9 @@ supervisor_children_kill_disabled(void)
 int
 supervisor_children_enable(const char *key, gboolean enable)
 {
-	struct child_s *sd;
+	g_assert_nonnull(key);
 
-	if (!key) {
-		errno = EINVAL;
-		return -1;
-	}
+	struct child_s *sd;
 	if (!(sd = supervisor_get_child(key))) {
 		errno = ENOENT;
 		return -1;
@@ -948,10 +945,8 @@ supervisor_children_set_limit(const gchar *key, enum supervisor_limit_e what, gi
 {
 	struct child_s *sd;
 
-	if (!key) {
-		errno = EINVAL;
-		return -1;
-	}
+	g_assert_nonnull(key);
+
 	if (what < SUPERV_LIMIT_THREAD_STACK || what > SUPERV_LIMIT_CORE_SIZE) {
 		errno = EINVAL;
 		return -1;
@@ -982,12 +977,10 @@ supervisor_children_set_limit(const gchar *key, enum supervisor_limit_e what, gi
 int
 supervisor_children_set_working_directory(const gchar *key, const gchar *dir)
 {
-	struct child_s *sd;
+	g_assert_nonnull(key);
+	g_assert_nonnull(dir);
 
-	if (!key || !dir) {
-		errno = EINVAL;
-		return -1;
-	}
+	struct child_s *sd;
 	if (!(sd = supervisor_get_child(key))) {
 		errno = ENOENT;
 		return -1;
@@ -1005,12 +998,11 @@ int
 supervisor_children_setenv(const gchar *key, const gchar *envkey,
 	const gchar *envval, gchar separator)
 {
-	struct child_s *sd;
+	g_assert_nonnull(key);
+	g_assert_nonnull(envkey);
+	g_assert_nonnull(envval);
 
-	if (!key || !envkey ||!envval) {
-		errno = EINVAL;
-		return -1;
-	}
+	struct child_s *sd;
 	if (!(sd = supervisor_get_child(key))) {
 		errno = ENOENT;
 		return -1;
@@ -1056,23 +1048,21 @@ supervisor_children_inherit_env(const gchar *key)
 	}
 }
 
+static void _free(gpointer p1, gpointer p2) { (void) p2; if (p1) g_free(p1); }
+
 int
 supervisor_children_clearenv(const gchar *key)
 {
-	void __free(gpointer p1, gpointer p2) { (void) p2; if (p1) g_free(p1); }
-	struct child_s *sd;
+	g_assert_nonnull(key);
 
-	if (!key) {
-		errno = EINVAL;
-		return -1;
-	}
+	struct child_s *sd;
 	if (!(sd = supervisor_get_child(key))) {
 		errno = ENOENT;
 		return -1;
 	}
 
 	if (sd->env) {
-		g_slist_foreach(sd->env, __free, NULL);
+		g_slist_foreach(sd->env, _free, NULL);
 		g_slist_free(sd->env);
 	}
 	sd->env = NULL;
@@ -1083,12 +1073,9 @@ supervisor_children_clearenv(const gchar *key)
 int
 supervisor_children_set_user_flags(const gchar *key, guint32 flags)
 {
-	struct child_s *sd;
+	g_assert_nonnull(key);
 
-	if (!key) {
-		errno = EINVAL;
-		return -1;
-	}
+	struct child_s *sd;
 	if (!(sd = supervisor_get_child(key))) {
 		errno = ENOENT;
 		return -1;
@@ -1102,12 +1089,9 @@ supervisor_children_set_user_flags(const gchar *key, guint32 flags)
 int
 supervisor_children_del_user_flags(const gchar *key, guint32 flags)
 {
-	struct child_s *sd;
+	g_assert_nonnull(key);
 
-	if (!key) {
-		errno = EINVAL;
-		return -1;
-	}
+	struct child_s *sd;
 	if (!(sd = supervisor_get_child(key))) {
 		errno = ENOENT;
 		return -1;
@@ -1121,12 +1105,9 @@ supervisor_children_del_user_flags(const gchar *key, guint32 flags)
 int
 supervisor_children_set_group(const gchar *key, const gchar *group)
 {
-	struct child_s *sd;
+	g_assert_nonnull(key);
 
-	if (!key) {
-		errno = EINVAL;
-		return -1;
-	}
+	struct child_s *sd;
 	if (!(sd = supervisor_get_child(key))) {
 		errno = ENOENT;
 		return -1;
@@ -1144,12 +1125,9 @@ supervisor_children_set_group(const gchar *key, const gchar *group)
 int
 supervisor_children_set_ids(const gchar *key, gint32 uid, gint32 gid)
 {
-	struct child_s *sd;
+	g_assert_nonnull(key);
 
-	if (!key) {
-		errno = EINVAL;
-		return -1;
-	}
+	struct child_s *sd;
 	if (!(sd = supervisor_get_child(key))) {
 		errno = ENOENT;
 		return -1;
@@ -1164,10 +1142,8 @@ supervisor_children_set_ids(const gchar *key, gint32 uid, gint32 gid)
 int
 supervisor_children_set_delay_sigkill(const char *key, time_t delay)
 {
-	if (!key) {
-		errno = EINVAL;
-		return -1;
-	}
+	g_assert_nonnull(key);
+
 	struct child_s *sd;
 	if (!(sd = supervisor_get_child(key))) {
 		errno = ENOENT;
