@@ -662,48 +662,65 @@ _str_is_num(const gchar *s)
 	return TRUE;
 }
 
-/** XXX JFS Linux-specific code */
+typedef gboolean (_int_resolver_f) (const char *str, gint32 *out, gchar *buf, gsize len);
+
 static gboolean
-uid_exists(const gchar *str, gint32 *id)
+_load_integer(_int_resolver_f *cb, const char *str, gint32 *out)
 {
-	struct passwd pwd, *p_pwd;
-	gchar buf[32768];
+	static gsize buflen = 2048;
+	gchar *buf = NULL;
+	gboolean rc = FALSE;
 
 	if (_str_is_num(str)) {
-		gint64 i64;
-
-		i64 = g_ascii_strtoll(str, NULL, 10);
-		*id = i64;
+		gint64 i64 = g_ascii_strtoll(str, NULL, 10);
+		*out = i64;
 		return TRUE;
 	}
 
-	if (0 != getpwnam_r(str, &pwd, buf, sizeof(buf), &p_pwd))
-		return FALSE;
+retry:
+	buf = g_try_realloc(buf, buflen);
+	errno = 0;
+	if (cb(str, out, buf, buflen)) {
+		rc = TRUE;
+	} else if (errno == ERANGE && buflen < 16 * 1024 * 1024) {
+		buflen = buflen * 2;
+		goto retry;
+	}
 
-	*id = pwd.pw_uid;
+	g_free(buf);
+	return rc;
+}
+
+static gboolean
+_load_uid(const char *str, gint32 *out, gchar *buf, gsize len)
+{
+	struct passwd pwd = {}, *p_pwd = NULL;
+	if (0 != getpwnam_r(str, &pwd, buf, len, &p_pwd))
+		return FALSE;
+	*out = pwd.pw_uid;
 	return TRUE;
 }
 
-/** XXX JFS Linux-specific code */
+static gboolean
+_load_gid(const char *str, gint32 *out, gchar *buf, gsize len)
+{
+	struct group grp = {}, *p_grp = NULL;
+	if (0 != getgrnam_r(str, &grp, buf, len, &p_grp))
+		return FALSE;
+	*out = grp.gr_gid;
+	return TRUE;
+}
+
+static gboolean
+uid_exists(const gchar *str, gint32 *id)
+{
+	return _load_integer(_load_uid, str, id);
+}
+
 static gboolean
 gid_exists(const gchar *str, gint32 *id)
 {
-	struct group grp, *p_grp;
-	gchar buf[32768];
-
-	if (_str_is_num(str)) {
-		gint64 i64;
-
-		i64 = g_ascii_strtoll(str, NULL, 10);
-		*id = i64;
-		return TRUE;
-	}
-
-	if (0 != getgrnam_r(str, &grp, buf, sizeof(buf), &p_grp))
-		return FALSE;
-
-	*id = grp.gr_gid;
-	return TRUE;
+	return _load_integer(_load_gid, str, id);
 }
 
 static void
