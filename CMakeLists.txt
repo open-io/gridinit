@@ -14,6 +14,21 @@ set(SHORT_API_VERSION "${GridInit_VERSION_MAJOR}.${GridInit_VERSION_MINOR}")
 add_definitions(-DAPI_VERSION="${API_VERSION}")
 add_definitions(-DSHORT_API_VERSION="${SHORT_API_VERSION}")
 
+option(ASAN "Enable ASAN (address sanitizer)" OFF)
+option(TSAN "Enable TSAN (thread sanitizer)" OFF)
+option(FSAN "Enable FSAN (frames sanitizer)" OFF)
+
+set(SAN_CFLAGS "")
+if (ASAN)
+	set(SAN_CFLAGS "-fno-omit-frame-pointer -fsanitize=address")
+endif ()
+if (TSAN)
+	set(SAN_CFLAGS "-fno-omit-frame-pointer -fsanitize=thread")
+endif ()
+if (FRAMES)
+	set(SAN_CFLAGS "${SAN_CFLAGS} -fstack-protector-all")
+endif ()
+
 set(CMAKE_C_FLAGS "-g -Wall -Wextra -Wunused -pipe -std=gnu99")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
 
@@ -22,6 +37,7 @@ if (CMAKE_COMPILER_IS_GNUCC)
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wsequence-point")
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wredundant-decls")
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wshadow")
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wtrampolines")
 
 	# gcc >= 4.2
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wcomment")
@@ -39,6 +55,7 @@ if (CMAKE_COMPILER_IS_GNUCC)
 	#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wconversion")
 	#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wswitch-enum")
 endif()
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_CFLAGS}")
 
 if (CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
 MESSAGE("DEBUG symbols enabled")
@@ -46,7 +63,7 @@ endif()
 
 set(CMAKE_C_FLAGS_DEBUG          "-O0 -fno-inline")
 set(CMAKE_C_FLAGS_RELEASE        "-O2")
-set(CMAKE_C_FLAGS_RELWITHDEBINFO "-O2 -fno-inline")
+set(CMAKE_C_FLAGS_RELWITHDEBINFO "-O2")
 set(CMAKE_C_FLAGS_MINSIZEREL     "-Os")
 
 add_definitions(-D_REENTRANT)
