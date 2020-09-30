@@ -1336,7 +1336,7 @@ static void
 __parse_options(int argc, char ** args)
 {
 	GError *error_local = NULL;
-	GOptionContext *context = g_option_context_new(" CONFIG_PATH [LOG4C_PATH]");
+	GOptionContext *context = g_option_context_new(" CONFIG_PATH");
 	g_option_context_add_main_entries(context, entries, NULL);
 	if (!g_option_context_parse(context, &argc, &args, &error_local)) {
 		g_print("option parsing failed: %s\n", error_local->message);
