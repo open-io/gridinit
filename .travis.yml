@@ -3,16 +3,19 @@ dist: bionic
 language: c
 install:
   - sudo apt-get install -y --force-yes gcc make cmake libglib2.0-dev
+  - sudo apt-get install -y --force-yes clang
   - sudo apt-get install -y --force-yes autoconf automake libtool xutils-dev
   - sudo apt-get install -y --force-yes jq
 env:
   matrix:
-    - BUILD_TYPE=Debug
-    - BUILD_TYPE=Release
+    - BUILD_TYPE=Debug COMPILER=gcc
+    - BUILD_TYPE=Release COMPILER=gcc
+    - BUILD_TYPE=Debug COMPILER=clang
+    - BUILD_TYPE=Release COMPILER=clang
 before_script:
-  - set -e
+  - set -ex
   - mkdir /tmp/oio
-  - export CMAKE_OPTS='-DCMAKE_INSTALL_PREFIX=/tmp/ROOT'
+  - export CMAKE_OPTS='-DCMAKE_INSTALL_PREFIX=/tmp/ROOT' CC=$COMPILER
   - cmake ${CMAKE_OPTS} -DCMAKE_BUILD_TYPE=$BUILD_TYPE .
   - make all
   - make install
