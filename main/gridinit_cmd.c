@@ -459,15 +459,20 @@ send_commandv(void (*dumper)(FILE *, void*), void *udata, const char *cmd, int a
 	return 0;
 }
 
+static void
+_on_reply(FILE *in_stream, void *u)
+{
+	GList **out = u;
+	g_assert_nonnull(out);
+	*out = read_services_list(in_stream);
+}
+
 static int
 _fetch_services(GList **out)
 {
 	GList *jobs = NULL;
-	void _on_reply(FILE *in_stream, void *udata UNUSED) {
-		jobs = read_services_list(in_stream);
-	}
 
-	int rc = send_commandv(_on_reply, NULL, "status", 0, (char*[]){NULL});
+	int rc = send_commandv(_on_reply, &jobs, "status", 0, (char*[]){NULL});
 	if (rc != 0) {
 		g_list_free_full(jobs, (GDestroyNotify)child_info_free);
 		*out = NULL;
