@@ -129,7 +129,7 @@ static GOptionEntry entries[] = {
 	 "csv or json","FORMAT"},
 	{"version", 'v', 0, G_OPTION_ARG_NONE, &flag_version,
 	 "Display the version of gridinit_cmd", NULL},
-	{NULL}
+	{NULL, 0, 0, 0, NULL, NULL, NULL}
 };
 
 static const gchar options[] = "(status{,2,3}|start|stop|reload|repair) [ID...]";

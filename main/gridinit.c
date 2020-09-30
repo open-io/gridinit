@@ -87,7 +87,7 @@ static GOptionEntry entries[] = {
 	 "verbose output mode", NULL},
 	{"syslog", 's', 0, G_OPTION_ARG_STRING, &syslog_id,
 	 "enable logs using syslog with the given ID", "ID"},
-	{NULL}
+	{NULL, 0, 0, 0, NULL, NULL, NULL}
 };
 
 /* ------------------------------------------------------------------------- */
