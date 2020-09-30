@@ -667,7 +667,7 @@ static gboolean
 uid_exists(const gchar *str, gint32 *id)
 {
 	struct passwd pwd, *p_pwd;
-	gchar buf[1024];
+	gchar buf[32768];
 
 	if (_str_is_num(str)) {
 		gint64 i64;
@@ -689,7 +689,7 @@ static gboolean
 gid_exists(const gchar *str, gint32 *id)
 {
 	struct group grp, *p_grp;
-	gchar buf[1024];
+	gchar buf[32768];
 
 	if (_str_is_num(str)) {
 		gint64 i64;
