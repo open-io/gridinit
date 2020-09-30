@@ -322,6 +322,104 @@ command_stop(GString *out, int argc, char **argv)
 }
 
 static void
+command_signal(GString *out, int argc, char **argv)
+{
+	char *str_signal;
+	int signal;
+
+	static struct signal_mapping_s {
+		char *name;
+		int value;
+	} SIGNAL [] = {
+#ifdef __unix__ // the base signals
+		{ "SIGABRT",	SIGABRT},
+		{ "SIGALRM",	SIGALRM },
+		{ "SIGBUS",	SIGBUS },
+		{ "SIGCHLD",	SIGCHLD },
+		{ "SIGCONT",	SIGCONT },
+		{ "SIGEMT",	SIGEMT },
+		{ "SIGFPE",	SIGFPE },
+		{ "SIGHUP",	SIGHUP },
+		{ "SIGILL",	SIGILL },
+		{ "SIGINFO",	SIGINFO },
+		{ "SIGINT",	SIGINT },
+		{ "SIGIO",	SIGIO },
+		{ "SIGKILL",	SIGKILL },
+		{ "SIGPIPE",	SIGPIPE },
+		{ "SIGPROF",	SIGPROF },
+		{ "SIGQUIT",	SIGQUIT },
+		{ "SIGSEGV",	SIGSEGV },
+		{ "SIGSTOP",	SIGSTOP },
+		{ "SIGSYS",	SIGSYS },
+		{ "SIGTERM",	SIGTERM },
+		{ "SIGTRAP",	SIGTRAP },
+		{ "SIGTSTP",	SIGTSTP },
+		{ "SIGTTIN",	SIGTTIN },
+		{ "SIGTTOU",	SIGTTOU },
+		{ "SIGURG",	SIGURG },
+		{ "SIGUSR1",	SIGUSR1 },
+		{ "SIGUSR2",	SIGUSR2 },
+		{ "SIGVTALRM",	SIGVTALRM },
+		{ "SIGWINCH",	SIGWINCH },
+		{ "SIGXCPU",	SIGXCPU },
+		{ "SIGXFSZ",	SIGXFSZ },
+#else
+#error Your plateform is not supported
+#endif
+
+#ifdef __FreeBSD__ // freebsd specific signals
+		{ "SIGTHR",	SIGTHR },
+		{ "SIGLIBRT",	SIGLIBRT },
+#endif
+#ifdef __linux__ // linux specific signals
+		{ "SIGCLD",	SIGCLD },
+		{ "SIGIOT",	SIGIOT },
+		{ "SIGLOST",	SIGLOST },
+		{ "SIGPOLL",	SIGPOLL },
+		{ "SIGPWR",	SIGPWR },
+		{ "SIGSTKFLT",	SIGSTKFLT },
+		{ "SIGUNUSED",	SIGUNUSED },
+		{ NULL, 0 },
+#endif
+	};
+
+	errno = 0; // this should not be needed
+
+	if( argc <= 0) {
+		g_string_append_printf(out, "No signal were specified\n");
+		return; // nothing to do
+	}
+
+	str_signal = argv[0];
+	argv++;
+	argc--;
+
+	// first we try to convert the string to an integer
+	signal = strtol(str_signal, NULL, 10); // TODO should we autodetect the base?
+	if (errno != 0) { // conversion failed
+		errno = 0;
+		// we look into the of known signals
+		for (struct signal_mapping_s* s = SIGNAL;; s++) {
+			if (s->name == NULL) { // we did not find any signals
+				g_string_append_printf(out, "Unable to decode the signal %s\n", str_signal);
+				return;
+			}
+			if (0 == strcasecmp(str_signal, s->name)) {
+				signal = s->value;
+				break;
+			}
+		}
+	}
+
+	void signal_process(void *u UNUSED, struct child_info_s *ci) {
+		kill(ci->pid, signal);
+	}
+
+	g_assert_nonnull(out);
+	return service_run_groupv(argc, argv, out, signal_process);
+}
+
+static void
 command_restart(GString *out, int argc, char **argv)
 {
 	void restart_process(void *u UNUSED, struct child_info_s *ci) {
@@ -427,6 +525,7 @@ __resolve_command(const gchar *n)
 		{"repair",  command_repair },
 		{"start",   command_start },
 		{"stop",    command_stop },
+		{"signal",  command_signal },
 		{"restart", command_restart },
 		{"reload",  command_reload },
 		{NULL,      NULL}

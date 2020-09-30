@@ -141,6 +141,7 @@ static const gchar description[] =
 	"  kill    : Stops the given processes or groups, they won't be automatically\n"
 	"            restarted even after a configuration reload\n"
 	"  stop    : Calls 'kill' until the children exit\n"
+	"  signal  : Send a choosen signal to the given processes or groups\n"
 	"  restart : Restarts the given processes or groups\n"
 	"  reload  : Reloads the configuration, stopping obsolete processes, starting\n"
 	"            the newly discovered. Broken or stopped processes are not restarted\n"
@@ -710,6 +711,17 @@ command_kill(int argc, char **args)
 		|| dump_args.count_success == 0;
 }
 
+static int
+command_signal(int argc, char **args)
+{
+	struct dump_as_is_arg_s dump_args = {};
+
+	int rc = send_commandv(dump_as_is, &dump_args, "signal", argc, args);
+	return rc
+		|| dump_args.count_errors != 0
+		|| dump_args.count_success == 0;
+}
+
 static gboolean
 _all_down(char **args, gboolean *down)
 {
@@ -793,6 +805,7 @@ struct command_s {
 	{ "status3", command_status2 },
 	{ "start",   command_start },
 	{ "stop",    command_stop },
+	{ "signal",  command_signal },
 	{ "kill",    command_kill },
 	{ "restart", command_restart },
 	{ "reload",  command_reload },
