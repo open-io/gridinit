@@ -161,37 +161,37 @@ _str_set_array(gboolean concat, gchar ***dst, gchar *str)
 /* Process management helpers ---------------------------------------------- */
 
 static void
-alert_proc_died(void *udata, struct child_info_s *ci)
+alert_proc_died(void *udata UNUSED, struct child_info_s *ci)
 {
-	(void) udata;
-
 	if (ci->started)
 		supervisor_children_set_user_flags(ci->key, USERFLAG_PROCESS_DIED);
 }
 
-static void
-alert_send_deferred(void *udata, struct child_info_s *ci)
+static gboolean
+alert_send_deferred(void *udata UNUSED, struct child_info_s *ci)
 {
-	(void) udata;
+	gboolean rc = FALSE;
 
 	/* Handle the alerting of broken services */
 	if ((ci->user_flags & USERFLAG_PROCESS_DIED) && ci->broken) {
 		supervisor_children_del_user_flags(ci->key, USERFLAG_PROCESS_DIED);
 		ERROR("Process broken [%s] %s", ci->key, ci->cmd);
+		rc = TRUE;
 	}
 
 	/* Handle the alerting of successfully restarted services */
 	if (!(ci->user_flags & USERFLAG_PROCESS_DIED) && (ci->user_flags & USERFLAG_PROCESS_RESTARTED)) {
 		supervisor_children_del_user_flags(ci->key, USERFLAG_PROCESS_RESTARTED);
 		NOTICE("Process restarted [%s] %s", ci->key, ci->cmd);
+		rc = TRUE;
 	}
+
+	return rc;
 }
 
 static void
-alert_proc_started(void *udata, struct child_info_s *ci)
+alert_proc_started(void *udata UNUSED, struct child_info_s *ci)
 {
-	(void) udata;
-
 	/* Note service has restarted */
 	if (ci->user_flags & USERFLAG_PROCESS_DIED) {
 		supervisor_children_del_user_flags(ci->key, USERFLAG_PROCESS_DIED);
@@ -222,62 +222,80 @@ thread_ignore_signals(void)
 
 /* COMMANDS management ----------------------------------------------------- */
 
+typedef void (_on_proc_f) (GString *out, struct child_info_s *ci);
+
+struct _run_ctx_s {
+	const char *group;
+	GString    *out;
+	_on_proc_f *cb;
+};
+
+static gboolean
+_group_filter(gpointer u, struct child_info_s *ci)
+{
+	g_assert_nonnull(u);
+	g_assert_nonnull(ci);
+
+	struct _run_ctx_s *ctx = u;
+	if (ctx->group && !gridinit_group_in_set(ctx->group, ci->group)) {
+		TRACE("start: Skipping [%s] with group [%s]", ci->key, ci->group);
+		return FALSE;
+	} else {
+		TRACE("Calback on service [%s]", ci->key);
+		ctx->cb(ctx->out, ci);
+		return TRUE;
+	}
+}
 
 static void
-service_run_groupv(int nb_groups, char **groupv, GString *out, supervisor_cb_f cb)
+service_run_groupv(int nb_groups, char **groupv, GString *out, _on_proc_f cb)
 {
-	guint count;
+	g_assert_nonnull(out);
+	g_assert_nonnull(cb);
 
-	void group_filter(void *u1, struct child_info_s *ci) {
-		const char *group = u1;
-		if (group && !gridinit_group_in_set(group, ci->group)) {
-			TRACE("start: Skipping [%s] with group [%s]", ci->key, ci->group);
-		} else {
-			TRACE("Calback on service [%s]", ci->key);
-			cb(out, ci);
-			++ count;
-		}
-	}
+	struct _run_ctx_s ctx = {NULL, out, cb};
 
 	if (!nb_groups || !groupv) {
-		supervisor_run_services(NULL, group_filter);
-	} else {
-		for (int i=0; i<nb_groups ;i++) {
-			char *what = groupv[i];
-			if (*what == '@') {
-				TRACE("Callback on group [%s]", what);
-				count = 0;
-				supervisor_run_services(what+1, group_filter);
-				if (!count && out) {
-					/* notifies the client the group has not been found */
-					g_string_append_printf(out, "%d %s\n", ENOENT, what);
-				}
+		(void) supervisor_run_services(&ctx, _group_filter);
+		return;
+	}
+	for (int i=0; i<nb_groups ;i++) {
+		char *what = groupv[i];
+		if (*what == '@') {
+			TRACE("Callback on group [%s]", what);
+			ctx.group = what + 1;
+			gint count = supervisor_run_services(&ctx, _group_filter);
+			if (count > 0 && out) {
+				/* notifies the client the group has not been found */
+				g_string_append_printf(out, "%d %s\n", ENOENT, what);
 			}
-			else {
-				struct child_info_s ci = {};
-				if (0 == supervisor_children_get_info(what, &ci)) {
-					TRACE("Calback on service [%s]", what);
-					cb(out, &ci);
-				} else {
-					if (out)
-						g_string_append_printf(out, "%d %s\n", errno, what);
-					if (errno == ENOENT)
-						TRACE("Service not found [%s]\n", what);
-					else
-						ERROR("Internal error [%s]: %s", what, strerror(errno));
-				}
+		}
+		else {
+			struct child_info_s ci = {};
+			if (0 == supervisor_children_get_info(what, &ci)) {
+				TRACE("Calback on service [%s]", what);
+				cb(out, &ci);
+			} else {
+				if (out)
+					g_string_append_printf(out, "%d %s\n", errno, what);
+				if (errno == ENOENT)
+					TRACE("Service not found [%s]\n", what);
+				else
+					ERROR("Internal error [%s]: %s", what, strerror(errno));
 			}
 		}
 	}
 }
 
 static void
-command_start(GString *out, int argc, char **argv)
+start_process(GString *out, struct child_info_s *ci)
 {
-	void start_process(void *u UNUSED, struct child_info_s *ci) {
-		supervisor_children_repair(ci->key);
+	g_assert_nonnull(out);
+	g_assert_nonnull(ci);
 
-		switch (supervisor_children_status(ci->key, TRUE)) {
+	supervisor_children_repair(ci->key);
+
+	switch (supervisor_children_status(ci->key, TRUE)) {
 		case 0:
 			INFO("Already started [%s]", ci->key);
 			g_string_append_printf(out, "%d %s\n", EALREADY, ci->key);
@@ -290,18 +308,23 @@ command_start(GString *out, int argc, char **argv)
 			WARN("Cannot start [%s]: %s", ci->key, strerror(errno));
 			g_string_append_printf(out, "%d %s\n", errno, ci->key);
 			return;
-		}
 	}
+}
 
+static void
+command_start(GString *out, int argc, char **argv)
+{
 	g_assert_nonnull(out);
 	return service_run_groupv(argc, argv, out, start_process);
 }
 
 static void
-command_stop(GString *out, int argc, char **argv)
+stop_process(GString *out, struct child_info_s *ci)
 {
-	void stop_process(void *u UNUSED, struct child_info_s *ci) {
-		switch (supervisor_children_status(ci->key, FALSE)) {
+	g_assert_nonnull(out);
+	g_assert_nonnull(ci);
+
+	switch (supervisor_children_status(ci->key, FALSE)) {
 		case 0:
 			INFO("Already stopped [%s]", ci->key);
 			g_string_append_printf(out, "%d %s\n", EALREADY, ci->key);
@@ -314,18 +337,23 @@ command_stop(GString *out, int argc, char **argv)
 			WARN("Cannot stop [%s]: %s", ci->key, strerror(errno));
 			g_string_append_printf(out, "%d %s\n", errno, ci->key);
 			return;
-		}
 	}
+}
 
+static void
+command_stop(GString *out, int argc, char **argv)
+{
 	g_assert_nonnull(out);
 	return service_run_groupv(argc, argv, out, stop_process);
 }
 
 static void
-command_restart(GString *out, int argc, char **argv)
+restart_process(GString *out, struct child_info_s *ci)
 {
-	void restart_process(void *u UNUSED, struct child_info_s *ci) {
-		switch (supervisor_children_restart(ci->key)) {
+	g_assert_nonnull(out);
+	g_assert_nonnull(ci);
+
+	switch (supervisor_children_restart(ci->key)) {
 		case 0:
 			INFO("Already restarted [%s]", ci->key);
 			g_string_append_printf(out, "%d %s\n", EALREADY, ci->key);
@@ -338,25 +366,30 @@ command_restart(GString *out, int argc, char **argv)
 			WARN("Cannot restart [%s]: %s", ci->key, strerror(errno));
 			g_string_append_printf(out, "%d %s\n", errno, ci->key);
 			return;
-		}
 	}
+}
 
+static void
+command_restart(GString *out, int argc, char **argv)
+{
 	g_assert_nonnull(out);
 	return service_run_groupv(argc, argv, out, restart_process);
 }
 
 static void
-command_show(GString *out, int argc UNUSED, char **argv UNUSED)
+print_process(GString *out, struct child_info_s *ci)
 {
-	void print_process(void *u UNUSED, struct child_info_s *ci) {
-		g_string_append_printf(out,
-				"%d "
-				"%d %d %d "
-				"%u %u "
-				"%ld "
-				"%ld %ld %ld "
-				"%u %u "
-				"%s %s %s\n",
+	g_assert_nonnull(out);
+	g_assert_nonnull(ci);
+
+	g_string_append_printf(out,
+			"%d "
+			"%d %d %d "
+			"%u %u "
+			"%ld "
+			"%ld %ld %ld "
+			"%u %u "
+			"%s %s %s\n",
 			ci->pid,
 			BOOL(ci->enabled), BOOL(ci->broken), BOOL(ci->respawn),
 			ci->counter_started, ci->counter_died,
@@ -364,25 +397,33 @@ command_show(GString *out, int argc UNUSED, char **argv UNUSED)
 			ci->rlimits.core_size, ci->rlimits.stack_size, ci->rlimits.nb_files,
 			ci->uid, ci->gid,
 			ci->key, ci->group, ci->cmd);
-	}
+}
 
+static void
+command_show(GString *out, int argc UNUSED, char **argv UNUSED)
+{
 	g_assert_nonnull(out);
 	return service_run_groupv(0, NULL, out, print_process);
 }
 
 static void
+repair_process(GString *out, struct child_info_s *ci)
+{
+	g_assert_nonnull(out);
+	g_assert_nonnull(ci);
+
+	if (0 == supervisor_children_repair(ci->key)) {
+		INFO("Repaired [%s]", ci->key);
+		g_string_append_printf(out, "%d %s\n", 0, ci->key);
+	} else {
+		WARN("Failed to repair [%s]: %s", ci->key, strerror(errno));
+		g_string_append_printf(out, "%d %s\n", errno, ci->key);
+	}
+}
+
+static void
 command_repair(GString *out, int argc, char **argv)
 {
-	void repair_process(void *u UNUSED, struct child_info_s *ci) {
-		if (0 == supervisor_children_repair(ci->key)) {
-			INFO("Repaired [%s]", ci->key);
-			g_string_append_printf(out, "%d %s\n", 0, ci->key);
-		} else {
-			WARN("Failed to repair [%s]: %s", ci->key, strerror(errno));
-			g_string_append_printf(out, "%d %s\n", errno, ci->key);
-		}
-	}
-
 	g_assert_nonnull(out);
 	return service_run_groupv(argc, argv, out, repair_process);
 }
@@ -1112,6 +1153,13 @@ label_exit:
 	return rc;
 }
 
+static int
+notify_error(const char *path, int en)
+{
+	NOTICE("errno=%d %s : %s", en, path, strerror(en));
+	return 0;
+}
+
 #define SETERRNO(ERR) do { if ((ERR) && *(ERR) && !(*(ERR))->code) (*(ERR))->code = errno; } while (0)
 static gboolean
 _cfg_reload(gboolean services_only, GError **err)
@@ -1134,10 +1182,6 @@ _cfg_reload(gboolean services_only, GError **err)
 
 	/* Then load "globbed" sub files, but only services */
 	if (config_subdir) {
-		int notify_error(const char *path, int en) {
-			NOTICE("errno=%d %s : %s", en, path, strerror(en));
-			return 0;
-		}
 		glob_t subfiles_glob = {};
 
 		DEBUG("Loading services files matching [%s]", config_subdir);
