@@ -567,13 +567,10 @@ _child_can_be_restarted(struct child_s *sd)
 int
 supervisor_children_get_info(const gchar *key, struct child_info_s *ci)
 {
+	g_assert_nonnull(key);
+	g_assert_nonnull(ci);
+
 	struct child_s *sd;
-
-	if (!key || !ci || !*key) {
-		errno= EINVAL;
-		return -1;
-	}
-
 	if (!(sd = supervisor_get_child(key))) {
 		errno = ENOENT;
 		return -1;
@@ -587,10 +584,9 @@ supervisor_children_get_info(const gchar *key, struct child_info_s *ci)
 guint
 supervisor_children_killall(int sig)
 {
-	guint count;
-	struct child_s *sd;
+	guint count = 0;
 
-	count = 0;
+	struct child_s *sd;
 	FOREACH_CHILD(sd) {
 		if (sd->pid > 0) {
 			if (0 == kill(sd->pid, sig))
@@ -604,10 +600,9 @@ supervisor_children_killall(int sig)
 guint
 supervisor_children_start_enabled(void *udata, supervisor_cb_f cb)
 {
-	guint count, proc_count;
-	struct child_s *sd;
+	guint count = 0U, proc_count = 0U;
 
-	count = proc_count = 0U;
+	struct child_s *sd;
 	FOREACH_CHILD(sd) {
 
 		proc_count ++;
@@ -635,10 +630,9 @@ supervisor_children_start_enabled(void *udata, supervisor_cb_f cb)
 guint
 supervisor_children_mark_obsolete(void)
 {
-	guint count;
-	struct child_s *sd;
+	guint count = 0;
 
-	count = 0;
+	struct child_s *sd;
 	FOREACH_CHILD(sd) {
 		FLAG_SET(sd, MASK_OBSOLETE);
 		count ++;
@@ -650,10 +644,9 @@ supervisor_children_mark_obsolete(void)
 guint
 supervisor_children_disable_obsolete(void)
 {
-	guint count;
-	struct child_s *sd;
+	guint count = 0;
 
-	count = 0U;
+	struct child_s *sd;
 	FOREACH_CHILD(sd) {
 		if (FLAG_HAS(sd,MASK_OBSOLETE)) {
 			FLAG_SET(sd, MASK_DISABLED);
@@ -771,7 +764,6 @@ supervisor_children_register(const gchar *key, const gchar *cmd)
 	/* check if the service is present */
 	FOREACH_CHILD(sd) {
 		if (0 == g_ascii_strcasecmp(sd->key, key)) {
-
 			/* the command might have changed */
 			if (sd->command)
 				g_free(sd->command);

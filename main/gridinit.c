@@ -269,8 +269,7 @@ service_run_groupv(int nb_groups, char **groupv, GString *out, _on_proc_f cb)
 				/* notifies the client the group has not been found */
 				g_string_append_printf(out, "%d %s\n", ENOENT, what);
 			}
-		}
-		else {
+		} else {
 			struct child_info_s ci = {};
 			if (0 == supervisor_children_get_info(what, &ci)) {
 				TRACE("Calback on service [%s]", what);
