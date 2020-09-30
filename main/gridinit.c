@@ -161,28 +161,28 @@ _str_set_array(gboolean concat, gchar ***dst, gchar *str)
 /* Process management helpers ---------------------------------------------- */
 
 static void
-alert_proc_died(void *udata UNUSED, struct child_info_s *ci)
+alert_proc_died(void *udata UNUSED, struct child_s *sd)
 {
-	if (ci->started)
-		supervisor_children_set_user_flags(ci->key, USERFLAG_PROCESS_DIED);
+	if (CHILD_STARTED(sd))
+		child_set_user_flags(sd, USERFLAG_PROCESS_DIED);
 }
 
 static gboolean
-alert_send_deferred(void *udata UNUSED, struct child_info_s *ci)
+alert_send_deferred(void *udata UNUSED, struct child_s *sd)
 {
 	gboolean rc = FALSE;
 
 	/* Handle the alerting of broken services */
-	if ((ci->user_flags & USERFLAG_PROCESS_DIED) && ci->broken) {
-		supervisor_children_del_user_flags(ci->key, USERFLAG_PROCESS_DIED);
-		ERROR("Process broken [%s] %s", ci->key, ci->cmd);
+	if (CHILD_DIED(sd) && CHILD_BROKEN(sd)) {
+		child_del_user_flags(sd, USERFLAG_PROCESS_DIED);
+		ERROR("Process broken [%s] %s", sd->key, sd->command);
 		rc = TRUE;
 	}
 
 	/* Handle the alerting of successfully restarted services */
-	if (!(ci->user_flags & USERFLAG_PROCESS_DIED) && (ci->user_flags & USERFLAG_PROCESS_RESTARTED)) {
-		supervisor_children_del_user_flags(ci->key, USERFLAG_PROCESS_RESTARTED);
-		NOTICE("Process restarted [%s] %s", ci->key, ci->cmd);
+	if (!CHILD_DIED(sd) && CHILD_RESTARTED(sd)) {
+		child_del_user_flags(sd, USERFLAG_PROCESS_RESTARTED);
+		NOTICE("Process restarted [%s] %s", sd->key, sd->command);
 		rc = TRUE;
 	}
 
@@ -190,12 +190,12 @@ alert_send_deferred(void *udata UNUSED, struct child_info_s *ci)
 }
 
 static void
-alert_proc_started(void *udata UNUSED, struct child_info_s *ci)
+alert_proc_started(void *udata UNUSED, struct child_s *sd)
 {
 	/* Note service has restarted */
-	if (ci->user_flags & USERFLAG_PROCESS_DIED) {
-		supervisor_children_del_user_flags(ci->key, USERFLAG_PROCESS_DIED);
-		supervisor_children_set_user_flags(ci->key, USERFLAG_PROCESS_RESTARTED);
+	if (CHILD_DIED(sd)) {
+		child_del_user_flags(sd, USERFLAG_PROCESS_DIED);
+		child_set_user_flags(sd, USERFLAG_PROCESS_RESTARTED);
 	}
 }
 
@@ -222,7 +222,7 @@ thread_ignore_signals(void)
 
 /* COMMANDS management ----------------------------------------------------- */
 
-typedef void (_on_proc_f) (GString *out, struct child_info_s *ci);
+typedef void (_on_proc_f) (GString *out, struct child_s *child);
 
 struct _run_ctx_s {
 	const char *group;
@@ -231,18 +231,18 @@ struct _run_ctx_s {
 };
 
 static gboolean
-_group_filter(gpointer u, struct child_info_s *ci)
+_group_filter(gpointer u, struct child_s *sd)
 {
 	g_assert_nonnull(u);
-	g_assert_nonnull(ci);
+	g_assert_nonnull(sd);
 
 	struct _run_ctx_s *ctx = u;
-	if (ctx->group && !gridinit_group_in_set(ctx->group, ci->group)) {
-		TRACE("start: Skipping [%s] with group [%s]", ci->key, ci->group);
+	if (ctx->group && !gridinit_group_in_set(ctx->group, sd->group)) {
+		TRACE("start: Skipping [%s] with group [%s]", sd->key, sd->group);
 		return FALSE;
 	} else {
-		TRACE("Calback on service [%s]", ci->key);
-		ctx->cb(ctx->out, ci);
+		TRACE("Calback on service [%s]", sd->key);
+		ctx->cb(ctx->out, sd);
 		return TRUE;
 	}
 }
@@ -270,10 +270,10 @@ service_run_groupv(int nb_groups, char **groupv, GString *out, _on_proc_f cb)
 				g_string_append_printf(out, "%d %s\n", ENOENT, what);
 			}
 		} else {
-			struct child_info_s ci = {};
-			if (0 == supervisor_children_get_info(what, &ci)) {
+			struct child_s *sd = supervisor_get_child(what);
+			if (sd != NULL) {
 				TRACE("Calback on service [%s]", what);
-				cb(out, &ci);
+				cb(out, sd);
 			} else {
 				if (out)
 					g_string_append_printf(out, "%d %s\n", errno, what);
@@ -287,25 +287,25 @@ service_run_groupv(int nb_groups, char **groupv, GString *out, _on_proc_f cb)
 }
 
 static void
-start_process(GString *out, struct child_info_s *ci)
+start_process(GString *out, struct child_s *sd)
 {
 	g_assert_nonnull(out);
-	g_assert_nonnull(ci);
+	g_assert_nonnull(sd);
 
-	supervisor_children_repair(ci->key);
+	child_repair(sd);
 
-	switch (supervisor_children_status(ci->key, TRUE)) {
+	switch (child_status(sd, TRUE)) {
 		case 0:
-			INFO("Already started [%s]", ci->key);
-			g_string_append_printf(out, "%d %s\n", EALREADY, ci->key);
+			INFO("Already started [%s]", sd->key);
+			g_string_append_printf(out, "%d %s\n", EALREADY, sd->key);
 			return;
 		case 1:
-			INFO("Started [%s]", ci->key);
-			g_string_append_printf(out, "%d %s\n", 0, ci->key);
+			INFO("Started [%s]", sd->key);
+			g_string_append_printf(out, "%d %s\n", 0, sd->key);
 			return;
 		default:
-			WARN("Cannot start [%s]: %s", ci->key, strerror(errno));
-			g_string_append_printf(out, "%d %s\n", errno, ci->key);
+			WARN("Cannot start [%s]: %s", sd->key, strerror(errno));
+			g_string_append_printf(out, "%d %s\n", errno, sd->key);
 			return;
 	}
 }
@@ -318,23 +318,23 @@ command_start(GString *out, int argc, char **argv)
 }
 
 static void
-stop_process(GString *out, struct child_info_s *ci)
+stop_process(GString *out, struct child_s *sd)
 {
 	g_assert_nonnull(out);
-	g_assert_nonnull(ci);
+	g_assert_nonnull(sd);
 
-	switch (supervisor_children_status(ci->key, FALSE)) {
+	switch (child_status(sd, FALSE)) {
 		case 0:
-			INFO("Already stopped [%s]", ci->key);
-			g_string_append_printf(out, "%d %s\n", EALREADY, ci->key);
+			INFO("Already stopped [%s]", sd->key);
+			g_string_append_printf(out, "%d %s\n", EALREADY, sd->key);
 			return;
 		case 1:
-			INFO("Stopped [%s]", ci->key);
-			g_string_append_printf(out, "%d %s\n", 0, ci->key);
+			INFO("Stopped [%s]", sd->key);
+			g_string_append_printf(out, "%d %s\n", 0, sd->key);
 			return;
 		default:
-			WARN("Cannot stop [%s]: %s", ci->key, strerror(errno));
-			g_string_append_printf(out, "%d %s\n", errno, ci->key);
+			WARN("Cannot stop [%s]: %s", sd->key, strerror(errno));
+			g_string_append_printf(out, "%d %s\n", errno, sd->key);
 			return;
 	}
 }
@@ -347,23 +347,23 @@ command_stop(GString *out, int argc, char **argv)
 }
 
 static void
-restart_process(GString *out, struct child_info_s *ci)
+restart_process(GString *out, struct child_s *sd)
 {
 	g_assert_nonnull(out);
-	g_assert_nonnull(ci);
+	g_assert_nonnull(sd);
 
-	switch (supervisor_children_restart(ci->key)) {
+	switch (child_restart(sd)) {
 		case 0:
-			INFO("Already restarted [%s]", ci->key);
-			g_string_append_printf(out, "%d %s\n", EALREADY, ci->key);
+			INFO("Already restarted [%s]", sd->key);
+			g_string_append_printf(out, "%d %s\n", EALREADY, sd->key);
 			return;
 		case 1:
-			INFO("Restart [%s]", ci->key);
-			g_string_append_printf(out, "%d %s\n", 0, ci->key);
+			INFO("Restart [%s]", sd->key);
+			g_string_append_printf(out, "%d %s\n", 0, sd->key);
 			return;
 		default:
-			WARN("Cannot restart [%s]: %s", ci->key, strerror(errno));
-			g_string_append_printf(out, "%d %s\n", errno, ci->key);
+			WARN("Cannot restart [%s]: %s", sd->key, strerror(errno));
+			g_string_append_printf(out, "%d %s\n", errno, sd->key);
 			return;
 	}
 }
@@ -376,10 +376,10 @@ command_restart(GString *out, int argc, char **argv)
 }
 
 static void
-print_process(GString *out, struct child_info_s *ci)
+print_process(GString *out, struct child_s *sd)
 {
 	g_assert_nonnull(out);
-	g_assert_nonnull(ci);
+	g_assert_nonnull(sd);
 
 	g_string_append_printf(out,
 			"%d "
@@ -389,13 +389,13 @@ print_process(GString *out, struct child_info_s *ci)
 			"%ld %ld %ld "
 			"%u %u "
 			"%s %s %s\n",
-			ci->pid,
-			BOOL(ci->enabled), BOOL(ci->broken), BOOL(ci->respawn),
-			ci->counter_started, ci->counter_died,
-			ci->last_start_attempt,
-			ci->rlimits.core_size, ci->rlimits.stack_size, ci->rlimits.nb_files,
-			ci->uid, ci->gid,
-			ci->key, ci->group, ci->cmd);
+			sd->pid,
+			CHILD_ENABLED(sd), CHILD_BROKEN(sd), CHILD_RESPAWN(sd),
+			sd->counter_started, sd->counter_died,
+			sd->last_start_attempt,
+			sd->rlimits.core_size, sd->rlimits.stack_size, sd->rlimits.nb_files,
+			sd->uid, sd->gid,
+			sd->key, sd->group, sd->command);
 }
 
 static void
@@ -406,17 +406,17 @@ command_show(GString *out, int argc UNUSED, char **argv UNUSED)
 }
 
 static void
-repair_process(GString *out, struct child_info_s *ci)
+repair_process(GString *out, struct child_s *sd)
 {
 	g_assert_nonnull(out);
-	g_assert_nonnull(ci);
+	g_assert_nonnull(sd);
 
-	if (0 == supervisor_children_repair(ci->key)) {
-		INFO("Repaired [%s]", ci->key);
-		g_string_append_printf(out, "%d %s\n", 0, ci->key);
+	if (0 == child_repair(sd)) {
+		INFO("Repaired [%s]", sd->key);
+		g_string_append_printf(out, "%d %s\n", 0, sd->key);
 	} else {
-		WARN("Failed to repair [%s]: %s", ci->key, strerror(errno));
-		g_string_append_printf(out, "%d %s\n", errno, ci->key);
+		WARN("Failed to repair [%s]: %s", sd->key, strerror(errno));
+		g_string_append_printf(out, "%d %s\n", errno, sd->key);
 	}
 }
 
@@ -766,6 +766,8 @@ gid_exists(const gchar *str, gint32 *id)
 static void
 _cfg_service_load_env(GKeyFile *kf, const gchar *section, const gchar *str_key)
 {
+	struct child_s *child = supervisor_get_child(str_key);
+
 	GHashTable *ht_env = _cfg_extract_parameters(kf, section, "env.", NULL);
 	if (!ht_env || !g_hash_table_size(ht_env)) {
 		TRACE("No env found for [%s]", section);
@@ -779,13 +781,11 @@ _cfg_service_load_env(GKeyFile *kf, const gchar *section, const gchar *str_key)
 	GHashTableIter iter_env;
 	gchar *k, *v;
 	g_hash_table_iter_init(&iter_env, ht_env);
+	
 	while (g_hash_table_iter_next(&iter_env, (gpointer*)&k, (gpointer*)&v)) {
-		if (0 != supervisor_children_setenv(str_key, k, v, inherit_env ? ':' : '\0'))
-			WARN("[%s] saved environment [%s]=[%s] : %s",
-				str_key, (gchar*)k, (gchar*)v, strerror(errno));
-		else
-			DEBUG("[%s] saved environment variable [%s]=[%s]",
-					str_key, (gchar*)k, (gchar*)v);
+		child_setenv(child, k, v, inherit_env ? ':' : '\0');
+		DEBUG("[%s] saved environment variable [%s]=[%s]",
+				str_key, (gchar*)k, (gchar*)v);
 	}
 
 	DEBUG("[%s] environment saved", str_key);
@@ -819,8 +819,7 @@ _group_is_accepted(gchar *str_key, gchar *str_group)
 static gboolean
 _service_exists(const gchar *key)
 {
-	struct child_info_s ci = {};
-	return 0 == supervisor_children_get_info(key, &ci);
+	return NULL != supervisor_get_child(key);
 }
 
 static gboolean
@@ -881,9 +880,11 @@ _cfg_section_service(GKeyFile *kf, const gchar *section, GError **err)
 	if (!supervisor_children_register(str_key, str_command))
 		goto label_exit;
 
+	struct child_s *child = supervisor_get_child(str_key);
+
 	/* Enables or not. This is a lock controlled by the configuration
 	 * that overrides all other child states. */
-	if (0 > supervisor_children_enable(str_key, _cfg_value_is_true(str_enabled))) {
+	if (0 > child_enable(child, _cfg_value_is_true(str_enabled))) {
 		*err = g_error_new(gq_log, errno, "Service [%s] cannot be marked [%s] : %s",
 		                        str_key, (_cfg_value_is_true(str_enabled)?"ENABLED":"DISABLED"),
 					strerror(errno));
@@ -891,60 +892,54 @@ _cfg_section_service(GKeyFile *kf, const gchar *section, GError **err)
 	}
 
 	if (*default_working_directory) {
-		if (0 > supervisor_children_set_working_directory(str_key, default_working_directory))
-			WARN("Failed to save default working directory for [%s] : %s", str_key, strerror(errno));
+		child_set_working_directory(child, default_working_directory);
 	}
 
 	/* If the service is discovered for the first time, then when
 	 * are allowed to change its 'tobe{started,stopped}' status */
 	if (!already_exists && str_startatboot) {
-		if (0 > supervisor_children_status(str_key, _cfg_value_is_true(str_startatboot)))
+		if (0 > child_status(child, _cfg_value_is_true(str_startatboot)))
 			WARN("Failed to set 'tobestarted/tobestopped' for [%s] : %s", str_key, strerror(errno));
 	}
 
 	/* on_die management. Respawn, cry */
 	if (str_ondie) {
 		if (0 == g_ascii_strcasecmp(str_ondie, "cry")) {
-			if (0 > supervisor_children_set_respawn(str_key, FALSE))
+			if (0 > child_set_respawn(child, FALSE))
 				WARN("Failed to make [%s] respawn : %s", str_key, strerror(errno));
-		}
-		else if (0 == g_ascii_strcasecmp(str_ondie, "respawn"))
-			supervisor_children_set_respawn(str_key, TRUE);
-		else {
+		} else if (0 == g_ascii_strcasecmp(str_ondie, "respawn")) {
+			child_set_respawn(child, TRUE);
+		} else {
 			WARN("Service [%s] has an unexpected [%s] value (%s), set to 'respawn'",
 				str_key, "on_die", str_ondie);
-			supervisor_children_set_respawn(str_key, TRUE);
+			child_set_respawn(child, TRUE);
 		}
 	}
 
 	/* By default set the current uid/gid, then overwrite this by
 	 * possibly configured default uid/gid  */
-	supervisor_children_set_ids(str_key, getuid(), getgid());
+	child_set_ids(child, getuid(), getgid());
 	if (default_uid>0 && default_gid>0) {
-		if (0 > supervisor_children_set_ids(str_key, default_uid, default_gid))
-			WARN("Failed to set UID/GID to %d/%d for [%s] : %s",
-					default_uid, default_gid, str_key, strerror(errno));
+		child_set_ids(child, default_uid, default_gid);
 	}
 
 	/* explicit user/group pair */
 	if (uid >= 0 && gid >= 0) {
-		if (0 > supervisor_children_set_ids(str_key, uid, gid))
-			WARN("Failed to set specific UID/GID to %"G_GINT32_FORMAT"/%"G_GINT32_FORMAT" for [%s] : %s",
-				uid, gid, str_key, strerror(errno));
+		child_set_ids(child, uid, gid);
 	}
 
 	/* alternative limits */
 	if (str_limit_stack) {
 		gint64 i64 = g_ascii_strtoll(str_limit_stack, NULL, 10);
-		supervisor_children_set_limit(str_key, SUPERV_LIMIT_THREAD_STACK, i64 * 1024LL);
+		child_set_limit(child, SUPERV_LIMIT_THREAD_STACK, i64 * 1024LL);
 	}
 	if (str_limit_fd) {
 		gint64 i64 = g_ascii_strtoll(str_limit_fd, NULL, 10);
-		supervisor_children_set_limit(str_key, SUPERV_LIMIT_MAX_FILES, i64);
+		child_set_limit(child, SUPERV_LIMIT_MAX_FILES, i64);
 	}
 	if (str_limit_core) {
 		gint64 i64 = g_ascii_strtoll(str_limit_core, NULL, 10);
-		supervisor_children_set_limit(str_key, SUPERV_LIMIT_CORE_SIZE, i64 * 1024LL * 1024LL);
+		child_set_limit(child, SUPERV_LIMIT_CORE_SIZE, i64 * 1024LL * 1024LL);
 	}
 
 	/* Explicit working directory */
@@ -952,27 +947,25 @@ _cfg_section_service(GKeyFile *kf, const gchar *section, GError **err)
 		if (!g_file_test(str_wd, G_FILE_TEST_IS_DIR|G_FILE_TEST_IS_EXECUTABLE))
 			WARN("Explicit working directory for [%s] does not exist yet [%s]",
 				str_key, str_wd);
-		if (0 > supervisor_children_set_working_directory(str_key, str_wd))
-			WARN("Failed to set an explicit working directory for [%s] : %s",
-				str_key, strerror(errno));
+		child_set_working_directory(child, str_wd);
 	}
 
 	/* Loads the environment */
-	supervisor_children_clearenv(str_key);
+	child_clearenv(child);
 	if (inherit_env)
-		supervisor_children_inherit_env (str_key);
+		child_inherit_env(child);
 
 	_cfg_service_load_env(kf, "Default", str_key);
 	_cfg_service_load_env(kf, section, str_key);
 
 	/* reset/set the process's group */
-	supervisor_children_set_group(str_key, NULL);
+	child_set_group(child, "");
 	if (str_group)
-		supervisor_children_set_group(str_key, str_group);
+		child_set_group(child, str_group);
 
 	if (str_delay_sigkill) {
 		time_t delay = g_ascii_strtoll(str_delay_sigkill, NULL, 10);
-		supervisor_children_set_delay_sigkill(str_key, delay);
+		child_set_delay_sigkill(child, delay);
 	}
 
 	rc = TRUE;
