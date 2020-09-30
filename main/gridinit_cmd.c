@@ -483,30 +483,32 @@ _fetch_services(GList **out)
 	}
 }
 
+static gboolean
+_filter_matches_srv(struct child_info_s *ci, char **filters, int *counters)
+{
+	for (int i=0; filters[i] ;i++) {
+		const char *pattern = filters[i];
+		if (pattern[0]=='@') {
+			if (gridinit_group_in_set(pattern+1, ci->group)) {
+				if (counters) counters[i] ++;
+				return TRUE;
+			}
+		} else {
+			if (!g_ascii_strcasecmp(ci->key, pattern)) {
+				if (counters) counters[i] ++;
+				return TRUE;
+			}
+		}
+	}
+	return FALSE;
+}
+
 static GList *
 _filter_services(GList *original, char **filters, int *counters)
 {
-	gboolean matches(struct child_info_s *ci) {
-		for (int i=0; filters[i] ;i++) {
-			const char *pattern = filters[i];
-			if (pattern[0]=='@') {
-				if (gridinit_group_in_set(pattern+1, ci->group)) {
-					if (counters) counters[i] ++;
-					return TRUE;
-				}
-			} else {
-				if (!g_ascii_strcasecmp(ci->key, pattern)) {
-					if (counters) counters[i] ++;
-					return TRUE;
-				}
-			}
-		}
-		return FALSE;
-	}
-
 	GList *result = NULL;
 	for (GList *l = original; l ;l = l->next) {
-		if (!filters[0] || matches(l->data)) {
+		if (!filters[0] || _filter_matches_srv(l->data, filters, counters)) {
 			result = g_list_append(result, l->data);
 		}
 	}
