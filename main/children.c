@@ -712,9 +712,9 @@ supervisor_children_catharsis(void *udata, supervisor_cb_f cb)
 void
 supervisor_children_stopall(guint max_retries)
 {
-	struct child_s *sd;
 	guint retries;
 
+	struct child_s *sd;
 	FOREACH_CHILD(sd) {
 		FLAG_DEL(sd, MASK_STARTED);
 	}
@@ -816,11 +816,11 @@ supervisor_children_register(const gchar *key, const gchar *cmd)
 gint
 supervisor_run_services(void *udata, supervisor_run_cb_f callback)
 {
-	struct child_s *sd;
 	gint count = 0U;
 
 	g_assert_nonnull(callback);
 
+	struct child_s *sd;
 	FOREACH_CHILD(sd) {
 		struct child_info_s ci = {};
 		if (FLAG_HAS(sd, MASK_OBSOLETE))
@@ -837,9 +837,9 @@ supervisor_run_services(void *udata, supervisor_run_cb_f callback)
 guint
 supervisor_children_kill_disabled(void)
 {
-	struct child_s *sd;
 	guint count = 0U;
 
+	struct child_s *sd;
 	FOREACH_CHILD(sd) {
 		/* Stop child that needs to be restarted */
 		if (FLAG_HAS(sd,MASK_RESTART))

@@ -1228,20 +1228,6 @@ label_exit:
 
 /* ------------------------------------------------------------------------- */
 
-static guint16
-compute_thread_id(GThread *thread)
-{
-	union { void *p; guint16 u[4]; } bulk = {};
-	bulk.p = thread;
-	return (bulk.u[0] ^ bulk.u[1]) ^ (bulk.u[2] ^ bulk.u[3]);
-}
-
-static guint16
-get_thread_id(void)
-{
-	return compute_thread_id(g_thread_self());
-}
-
 static int
 glvl_to_lvl(GLogLevelFlags lvl)
 {
@@ -1332,7 +1318,7 @@ logger_syslog(const gchar *log_domain, GLogLevelFlags log_level,
 
 	GString *gstr = g_string_new("");
 
-	g_string_append_printf(gstr, "%d %04X", getpid(), get_thread_id());
+	g_string_append_printf(gstr, "%d 0000", getpid());
 
 	if (!log_domain || !*log_domain)
 		log_domain = "-";
@@ -1364,9 +1350,9 @@ logger_stderr(const gchar *log_domain, GLogLevelFlags log_level,
 	gstr = g_string_sized_new(256);
 	gettimeofday(&tv, NULL);
 
-	g_string_append_printf(gstr, "%ld.%03ld %d %04X ",
+	g_string_append_printf(gstr, "%ld.%03ld %d 0000 ",
 			tv.tv_sec, tv.tv_usec/1000,
-			getpid(), get_thread_id());
+			getpid());
 
 	if (!log_domain || !*log_domain)
 		log_domain = "-";
