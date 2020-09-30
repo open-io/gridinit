@@ -49,6 +49,62 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 # define DEBUG(Format,...)  g_log(LOG_DOMAIN, GRID_LOGLVL_DEBUG,  Format, ##__VA_ARGS__)
 # define TRACE(Format,...)  g_log(LOG_DOMAIN, GRID_LOGLVL_TRACE,  Format, ##__VA_ARGS__)
 
+/**
+ * Temporary flag used by gridinit to mark services during a refresh.
+ */
+#define MASK_OBSOLETE     0x01
+
+/**
+ * The service has been explicitely disabled and won't be restarted
+ */
+#define MASK_DISABLED     0x02
+
+/**
+ * This flag tells the service must be restarted when it falls
+ */
+#define MASK_RESPAWN      0x04
+
+/**
+ * The service has been started and should be running
+ */
+#define MASK_STARTED      0x08
+
+/**
+ * The service died too often and won't be automatically restarted
+ * unless it is explicitely reset
+ */
+#define MASK_BROKEN       0x10
+
+/**
+ * Should the service be considered dead when it dies too often?
+ */
+#define MASK_NEVER_BROKEN 0x20
+
+/**
+ * Tells if the child should be immediately restarted or not
+ */
+#define MASK_DELAYED      0x40
+
+/**
+ * Tells if the child should restart after explicitely being stopped
+ */
+#define MASK_RESTART	  0x80
+
+#define FLAG_SET(sd,M) do { sd->flags |= (M); } while (0)
+#define FLAG_DEL(sd,M) do { sd->flags &= ~(M); } while (0)
+#define FLAG_HAS(sd,M) ((sd)->flags & (M))
+
+#define CHILD_ENABLED(c)   !FLAG_HAS(c,MASK_DISABLED)
+#define CHILD_STARTED(c)    FLAG_HAS(c,MASK_STARTED)
+#define CHILD_RESPAWN(c)    FLAG_HAS(c,MASK_RESPAWN)
+#define CHILD_RESTART(c)    FLAG_HAS(c,MASK_RESTART)
+#define CHILD_BROKEN(c)     FLAG_HAS(c,MASK_BROKEN)
+#define CHILD_BREAKABLE(c) !FLAG_HAS(c,MASK_NEVER_BROKEN)
+#define CHILD_OBSOLETE(c)   FLAG_HAS(c,MASK_OBSOLETE)
+
+#define CHILD_DIED(c)      ((c)->user_flags & USERFLAG_PROCESS_DIED)
+#define CHILD_RESTARTED(c) ((c)->user_flags & USERFLAG_PROCESS_RESTARTED)
+
 extern time_t supervisor_default_delay_KILL;
 
 extern GQuark gq_log;
@@ -61,34 +117,55 @@ enum supervisor_limit_e {
 	SUPERV_LIMIT_CORE_SIZE=3
 };
 
-struct child_info_s {
-	const char *key;
-	const char *cmd;
-	gint pid;
-	guint uid;
-	guint gid;
-	gboolean enabled;
-	gboolean respawn;
-	time_t last_start_attempt;
-	guint counter_started;
-	guint counter_died;
-	struct {
-		long core_size;
-		long stack_size;
-		long nb_files;
-	} rlimits;
-
-	/* added at the end for binary backward compatibility */
-	gboolean broken;
-	gboolean breakable;
-	guint32 user_flags;
-	const char *group;
-	gboolean started;
+struct my_rlimits_s {
+	gint64 core_size;
+	gint64 stack_size;
+	gint64 nb_files;
 };
 
-typedef void (supervisor_cb_f) (void *udata, struct child_info_s *ci);
+struct child_s {
+	struct child_s *next;
+	time_t delay_before_KILL;
+	gchar *command;
+	pid_t pid;
+	uid_t uid;
+	gid_t gid;
+	gchar *working_directory;
+	guint8 flags; /* internal use only */
+	guint32 user_flags;
+	GSList *env;
 
-typedef gboolean (supervisor_run_cb_f) (void *udata, struct child_info_s *ci);
+	/* Useful stats */
+	guint counter_started;
+	guint counter_died;
+
+	/* wall-clock time */
+	time_t last_start;
+
+	/* monotonic-clock time */
+	time_t last_start_attempt;
+	time_t first_kill_attempt;
+	time_t last_kill_attempt;
+
+	struct {
+		time_t t0;
+		time_t t1;
+		time_t t2;
+		time_t t3;
+		time_t t4;
+	} deaths;
+
+	/* Child's startup properties */
+	struct my_rlimits_s rlimits;
+
+	gchar key[SUPERVISOR_LIMIT_CHILDKEYSIZE];
+	gchar group[2048];
+};
+
+
+typedef void (supervisor_cb_f) (void *udata, struct child_s *sd);
+
+typedef gboolean (supervisor_run_cb_f) (void *udata, struct child_s *sd);
 
 
 void supervisor_children_init(void);
@@ -120,54 +197,56 @@ guint supervisor_children_kill_disabled(void);
 /* starts all the stopped services in a state proper to be restarted */
 guint supervisor_children_start_enabled(void *udata, supervisor_cb_f cb);
 
-/* Sets the 'enabled' flag on the service */
-int supervisor_children_enable(const char *key, gboolean enable);
-
-/* Sets the 'autorespawn' flag on this service */
-int supervisor_children_set_respawn(const char *key, gboolean enabled);
-
-/* Marks the service to be started or stopped.  */
-int supervisor_children_status(const char *key, gboolean to_be_started);
-
-/* Starts a service that died too often */
-int supervisor_children_repair(const char *key);
-
-/* Sets/Disable the "delayed restart" behavior for a process */
-int supervisor_children_set_delay(const char *key, gboolean enabled);
-
 /* Calls supervisor_children_repair() on each broken service */
 int supervisor_children_repair_all(void);
-
-/* Restart a service */
-int supervisor_children_restart(const char *key);
-
-int supervisor_children_set_limit(const gchar *key,
-		enum supervisor_limit_e what, gint64 value);
 
 /* Runs the children list and call the callback fnction on each element */
 gint supervisor_run_services(void *ptr, supervisor_run_cb_f callback);
 
-int supervisor_children_set_working_directory(const gchar *key,
+struct child_s * supervisor_get_child(const gchar *key);
+
+/* ------------------------------------------------------------------------- */
+
+/* Sets the 'enabled' flag on the service */
+int child_enable(struct child_s *child, gboolean enable);
+
+/* Sets the 'autorespawn' flag on this service */
+int child_set_respawn(struct child_s *child, gboolean enabled);
+
+/* Marks the service to be started or stopped.  */
+int child_status(struct child_s *child, gboolean to_be_started);
+
+/* Starts a service that died too often */
+int child_repair(struct child_s *child);
+
+/* Sets/Disable the "delayed restart" behavior for a process */
+int child_set_delay(struct child_s *child, gboolean enabled);
+
+/* Restart a service */
+int child_restart(struct child_s *child);
+
+void child_set_limit(struct child_s *child,
+		enum supervisor_limit_e what, gint64 value);
+
+void child_set_working_directory(struct child_s *child,
 		const gchar *dir);
 
-int supervisor_children_setenv(const gchar *key, const gchar *envkey,
+void child_setenv(struct child_s *child, const gchar *envkey,
 	const gchar *envval, gchar separator);
 
-void supervisor_children_inherit_env(const gchar *key);
+void child_inherit_env(struct child_s *child);
 
-int supervisor_children_clearenv(const gchar *key);
+void child_clearenv(struct child_s *child);
 
-int supervisor_children_set_user_flags(const gchar *key, guint32 flags);
+void child_set_user_flags(struct child_s *child, guint32 flags);
 
-int supervisor_children_del_user_flags(const gchar *key, guint32 flags);
+void child_del_user_flags(struct child_s *child, guint32 flags);
 
-int supervisor_children_set_group(const gchar *key, const gchar *group);
+void child_set_group(struct child_s *child, const gchar *group);
 
-int supervisor_children_get_info(const gchar *key, struct child_info_s *ci);
+void child_set_ids(struct child_s *child, gint32 uid, gint32 gid);
 
-int supervisor_children_set_ids(const gchar *key, gint32 uid, gint32 gid);
-
-int supervisor_children_set_delay_sigkill(const char *key, time_t delay);
+void child_set_delay_sigkill(struct child_s *child, time_t delay);
 
 /* Privileges -------------------------------------------------------------- */
 
