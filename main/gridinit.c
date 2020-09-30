@@ -61,7 +61,6 @@ static char **groups_only_cfg = NULL;
 static volatile gboolean flag_quiet = FALSE;
 static volatile gboolean flag_daemon = FALSE;
 static volatile gboolean flag_running = TRUE;
-static volatile gboolean flag_check_socket = FALSE;
 static volatile gboolean flag_more_verbose = FALSE;
 static volatile gboolean flag_version = FALSE;
 
