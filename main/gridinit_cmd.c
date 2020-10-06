@@ -61,7 +61,7 @@ struct child_info_s {
 	gboolean broken;
 	gboolean breakable;
 	guint32 user_flags;
-	time_t last_start_attempt;
+	time_t last_start;
 	guint counter_started;
 	guint counter_died;
 	struct {
@@ -271,7 +271,7 @@ read_services_list(FILE *in_stream)
 					ci.respawn = BOOL(atoi(tokens[3]));
 					ci.counter_started = atoi(tokens[4]);
 					ci.counter_died = atoi(tokens[5]);
-					ci.last_start_attempt = atol(tokens[6]);
+					ci.last_start = atol(tokens[6]);
 					ci.rlimits.core_size = atol(tokens[7]);
 					ci.rlimits.stack_size = atol(tokens[8]);
 					ci.rlimits.nb_files = atol(tokens[9]);
@@ -600,7 +600,7 @@ command_status(int lvl, int argc, char **args)
 
 		/* Prepare some fields */
 		strftime(str_time, sizeof(str_time), "%Y-%m-%d %H:%M:%S",
-				gmtime(&(ci->last_start_attempt)));
+				gmtime(&(ci->last_start)));
 		str_status = get_child_status(ci, kw);
 
 		/* Manage counters */

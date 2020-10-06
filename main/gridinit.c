@@ -391,7 +391,7 @@ print_process(GString *out, struct child_s *sd)
 			sd->pid,
 			CHILD_ENABLED(sd), CHILD_BROKEN(sd), CHILD_RESPAWN(sd),
 			sd->counter_started, sd->counter_died,
-			sd->last_start_attempt,
+			sd->last_start,
 			sd->rlimits.core_size, sd->rlimits.stack_size, sd->rlimits.nb_files,
 			sd->uid, sd->gid,
 			sd->key, sd->group, sd->command);
