@@ -164,6 +164,18 @@ parse_format(const gchar *cfg_format)
 		return DEFAULT;
 }
 
+/** Convert a monotonic timestamp to its Epoch equivalent.
+ * This function assumes the monotonic time is system-wide. */
+static gint64
+monotonic_to_real_seconds(time_t seconds)
+{
+	/* We could cache the difference between, the two clocks, but it seems
+	 * a bit overkill for a function which will be called once per managed
+	 * process (max 100 times?). */
+	time_t real = time(NULL);
+	time_t mono = (time_t) (g_get_monotonic_time() / G_TIME_SPAN_SECOND);
+	return real - mono + seconds;
+}
 
 static int
 __open_unix_client(const char *path)
@@ -592,8 +604,9 @@ command_status(int lvl, int argc, char **args)
 		struct child_info_s *ci = ci = l->data;
 
 		/* Prepare some fields */
+		time_t epoch_start = monotonic_to_real_seconds(ci->last_start_attempt);
 		strftime(str_time, sizeof(str_time), "%Y-%m-%d %H:%M:%S",
-				gmtime(&(ci->last_start_attempt)));
+				gmtime(&epoch_start));
 		str_status = get_child_status(ci, kw);
 
 		/* Manage counters */
