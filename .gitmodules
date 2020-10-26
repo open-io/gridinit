@@ -1,0 +1,4 @@
+[submodule "vendor/libdill"]
+	path = vendor/libdill
+	url = https://github.com/open-io/libdill.git
+	branch = release
