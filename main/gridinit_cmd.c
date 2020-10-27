@@ -33,16 +33,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define UNUSED __attribute__ ((unused))
 
-#define MINI 0
-#define MEDIUM 1
-
 
 static gchar *sock_path = NULL;
 static gchar line[8192] = "";
 static gboolean flag_color = FALSE;
 static gchar *format = NULL;
 static gboolean flag_version = FALSE;
-#define BOOL(i) (i?1:0)
 
 struct dump_as_is_arg_s {
 	guint count_success;

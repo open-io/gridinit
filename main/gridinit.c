@@ -40,7 +40,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define USERFLAG_PROCESS_RESTARTED 0x00000004
 #define UNUSED __attribute__ ((unused))
 
-#define BOOL(i) ((i)!=0)
 
 int main_log_level_default = 0x7F;
 int main_log_level = 0x7F;
