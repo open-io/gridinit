@@ -6,8 +6,8 @@ include(CheckLibraryExists)
 include(CheckTypeSize)
 
 set(GridInit_VERSION_MAJOR 2)
-set(GridInit_VERSION_MINOR 0)
-set(GridInit_RELEASE 2)
+set(GridInit_VERSION_MINOR 2)
+set(GridInit_RELEASE 0)
 set(API_VERSION "${GridInit_VERSION_MAJOR}.${GridInit_VERSION_MINOR}.${GridInit_RELEASE}")
 set(SHORT_API_VERSION "${GridInit_VERSION_MAJOR}.${GridInit_VERSION_MINOR}")
 
