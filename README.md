@@ -2,20 +2,39 @@
 
 Gridinit is a tool used to manage non-daemon processes.
 
+## Dependencies
+
+* A toolchain made of [cmake](https://cmake.org),
+  [make](https://www.gnu.org/software/make/),
+  [pkg-config](https://www.freedesktop.org/wiki/Software/pkg-config/),
+  [gcc](https://www.gnu.org/software/gcc/) or [clang](https://clang.llvm.org/)
+* The [GNome Library](https://developer.gnome.org/glib/stable/)
+* [Martin Sustrik's libdill](https://github.com/open-io/libdill)
+
 ## Build
 
-```
+Building ``gridinit`` is configured by ``cmake``, done by ``make`` and requires
+that ``libdill`` is installed ans its installation paths are configured with
+``pkg-config``.
+
+```shell script
 cmake -D GRIDINIT_SOCK_PATH=/tmp/gridinit.sock .
 make
 ```
 
-### Dependencies
+But ``libdill`` is rarely available in mainstream Linux distributions, so here
+are the build instructions to build it from the ``git submodule``:
 
-* cmake, make, gcc
-* glib, glib-devel
-* libdill (currently embedded)
+```shell script
+git submodule update --init --recursive
+cd vendor/libdill
+./autogen.sh
+./configure --prefix=/usr --enable-shared --disable-static --enable-tls --enable-threads
+make
+sudo make install
+```
 
-### Compile-time configuration
+## Compile-time Configuration
 
 | Macro | Default | Description |
 | ----- | ------- | ----------- |
