@@ -1,0 +1,78 @@
+version: 2.1
+
+executors:
+  ubuntu-focal:
+    docker:
+      - image: ubuntu:focal
+  ubuntu-bionic:
+    docker:
+      - image: ubuntu:bionic
+  ubuntu-xenial:
+    docker:
+      - image: ubuntu:xenial
+
+workflows:
+  all-tests:
+    jobs:
+      - build:
+          matrix:
+            parameters:
+              os: [ubuntu-focal, ubuntu-bionic, ubuntu-xenial]
+              build-type: [Debug, RelWithDebInfo, MinSizeRel]
+              compiler: [gcc, clang]
+
+jobs:
+  build:
+    parameters:
+      os:
+        type: executor
+      build-type:
+        type: string
+      compiler:
+        type: string
+    executor: << parameters.os >>
+    steps:
+      - checkout
+      - run:
+          name: System dependencies
+          command: |
+            set -ex
+            PKG='apt-get install -y --no-install-recommends'
+            export DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true
+            echo "tzdata tzdata/Areas select Europe" > /tmp/preseed.txt
+            echo "tzdata tzdata/Zones/Europe select Brussels" >> /tmp/preseed.txt
+            debconf-set-selections /tmp/preseed.txt
+            apt-get update -q
+            $PKG tzdata ca-certificates
+            $PKG git pkg-config cmake make build-essential m4 autotools-dev autoconf automake libtool << parameters.compiler >>
+            $PKG libglib2.0-dev jq
+      - run:
+          name: Pull Submodules
+          command: git submodule update --init --recursive
+      - run:
+          name: Build open-io/libdill
+          command: |
+            set -ex
+            cd vendor/libdill
+            export CC=<< parameters.compiler >>
+            ./autogen.sh
+            ./configure --prefix=/usr --enable-shared --disable-static --disable-tls --disable-threads
+            make -j 8
+            make install
+      - run:
+          name: Build open-io/gridinit
+          command: |
+            set -ex
+            export CC=<< parameters.compiler >>
+            cmake -DCMAKE_BUILD_TYPE=<< parameters.build-type>> -DCMAKE_VERBOSE_MAKEFILE=TRUE -DCMAKE_INSTALL_PREFIX=/usr .
+            make -j 8
+            make install
+      - run:
+          name: Test open-io/gridinit
+          command: |
+            set -ex
+            export TMPDIR=/tmp
+            ./tools/gridinit-genconf.sh 15
+            gridinit -d -s gridinit /tmp/gridinit/gridinit.conf
+            ./tools/cycle.sh
+            pkill gridinit
