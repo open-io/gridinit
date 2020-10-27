@@ -1,11 +1,25 @@
 sudo: required
 dist: bionic
 language: c
-install:
-  - sudo apt-get install -y --force-yes gcc make cmake libglib2.0-dev
-  - sudo apt-get install -y --force-yes clang
-  - sudo apt-get install -y --force-yes autoconf automake libtool xutils-dev
-  - sudo apt-get install -y --force-yes jq
+git:
+  submodules: true
+addons:
+  apt:
+    packages:
+    - autoconf
+    - automake
+    - autotools-dev
+    - build-essential
+    - clang
+    - cmake
+    - gcc
+    - jq
+    - libglib2.0-dev
+    - libtool
+    - m4
+    - make
+    - sudo
+    - pkg-config
 env:
   matrix:
     - BUILD_TYPE=Debug COMPILER=gcc
@@ -13,15 +27,21 @@ env:
     - BUILD_TYPE=Debug COMPILER=clang
     - BUILD_TYPE=Release COMPILER=clang
 before_script:
-  - set -ex
   - mkdir /tmp/oio
-  - export CMAKE_OPTS='-DCMAKE_INSTALL_PREFIX=/tmp/ROOT' CC=$COMPILER
-  - cmake ${CMAKE_OPTS} -DCMAKE_BUILD_TYPE=$BUILD_TYPE .
-  - make all
-  - make install
+  - export NBPROCS=$(nprocs --ignore=1)
+  - cd vendor/libdill
+  - ./autogen.sh
+  - ./configure --prefix=/usr --enable-shared --disable-static --disable-tls --disable-threads
+  - make -j ${NBPROCS} all
+  - sudo make install
+  - cd -
+  - export CC=$COMPILER
+  - cmake -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=$BUILD_TYPE .
+  - make -j ${NBPROC} all
+  - sudo make install
 script:
   - set -e
-  - export PATH="$PATH:/tmp/ROOT/bin" TMPDIR=/tmp
+  - export TMPDIR=/tmp
   - ./tools/gridinit-genconf.sh 15
   - gridinit -d -s gridinit /tmp/gridinit/gridinit.conf
   - ./tools/cycle.sh
