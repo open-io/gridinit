@@ -1,0 +1,15 @@
+/.idea
+/cmake-build-debug
+**.so
+**.la
+**.o
+
+gridinit
+gridinit_cmd
+
+**/CMakeCache.txt
+**/CMakeFiles
+**/install_manifest.txt
+**/Makefile
+
+vendor/libdill/**
