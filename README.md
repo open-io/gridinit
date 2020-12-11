@@ -2,6 +2,18 @@
 
 Gridinit is a tool used to manage non-daemon processes.
 
+## Supported Linux Distributions
+
+* Ubuntu
+  * Trusty
+  * Xenial
+  * Bionic
+  * Focal
+
+Wanna check? Then use the [build_all.sh script](./docker/build_all.sh) that
+relies on our [Dockerfile](./docker/Dockerfile) to reproduce minimal build
+environments.
+
 ## Dependencies
 
 * A toolchain made of [cmake](https://cmake.org),
@@ -9,7 +21,7 @@ Gridinit is a tool used to manage non-daemon processes.
   [pkg-config](https://www.freedesktop.org/wiki/Software/pkg-config/),
   [gcc](https://www.gnu.org/software/gcc/) or [clang](https://clang.llvm.org/)
 * The [GNome Library](https://developer.gnome.org/glib/stable/)
-* [Martin Sustrik's libdill](https://github.com/open-io/libdill)
+* [Martin Sustrik's libdill](https://github.com/open-io/libdill) in its OpenIO supported version.
 
 ## Build
 
