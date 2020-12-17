@@ -1,0 +1,21 @@
+#!/usr/bin/make -f
+export DH_OPTIONS=-v
+
+include /usr/share/dpkg/default.mk
+
+# main packaging script based on dh7 syntax
+%:
+	dh $@ --with=systemd
+
+override_dh_auto_configure:
+	for i in debian/patches/*.patch; do patch -f -p1 < $$i; done
+	dh_auto_configure -- \
+	-DPREFIX=/usr \
+	-DLD_LIBDIR=lib \
+	-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+	-DGRIDINIT_SOCK_PATH="/run/gridinit/gridinit.sock" \
+	-Wno-dev
+
+override_dh_install:
+	dh_install
+	install -m 755 tools/gridinit-syslog-logger debian/gridinit/usr/bin/gridinit-syslog-logger
