@@ -1,0 +1,93 @@
+version: v1.0
+name: gridinit-build
+
+stages:
+  - compile
+  - package
+
+jobs:
+  - job: Test and compile
+    stage: compile
+    steps:
+      - name: Checkout Application
+        checkout: '{{ .cds.workspace }}'
+      - name: Prepare system and install dependencies
+        script: |
+          #!/bin/bash
+          cat $0
+          set -ex
+          PKG='apt-get install -y --no-install-recommends'
+          export DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true
+          echo "tzdata tzdata/Areas select Europe" > /tmp/preseed.txt
+          echo "tzdata tzdata/Zones/Europe select Brussels" >> /tmp/preseed.txt
+          debconf-set-selections /tmp/preseed.txt
+          apt-get update -q
+          $PKG tzdata ca-certificates
+          $PKG git pkg-config cmake make build-essential m4 autotools-dev autoconf automake libtool clang
+          $PKG libglib2.0-dev jq
+      - name: Compile local libdill (in order to be indenpendant from another package in testing)
+        script: |
+          #!/bin/bash
+          cat $0
+          set -ex
+          cd vendor/libdill
+          export CC=clang
+          ./autogen.sh
+          ./configure --prefix=/usr --enable-shared --disable-static --disable-tls --disable-threads
+          make -j 8
+          make install
+      - name: Compile and install gridinit
+        script: |
+          #!/bin/bash
+          cat $0
+          set -ex
+          export CC=clang
+          cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_VERBOSE_MAKEFILE=TRUE -DCMAKE_INSTALL_PREFIX=/usr .
+          make -j 8
+          make install
+      - name: Test gridinit
+        script: |
+          #!/bin/bash
+          cat $0
+          set -ex
+          export TMPDIR=/tmp
+          ./tools/gridinit-genconf.sh 15
+          gridinit -d -s gridinit /tmp/gridinit/gridinit.conf
+          ./tools/cycle.sh
+          pkill gridinit
+    requirements:
+      - model: ubuntu-bionic
+
+  - job: Package
+    stage: package
+    steps:
+      - name: Checkout application
+        checkout: '{{ .cds.workspace }}'
+      - name: Clone external-packages
+        script:
+          - eval $(worker key install --env-git proj-ssh-openio)
+          - git clone {{ .cds.proj.STASH_URL }}/openio/external-packages.git /external-packages
+      - name: Build package and upload
+        script: |+
+          #!/bin/bash
+          cat $0
+          set -x
+          export REPO_URL="https://{{ .cds.proj.drive_mirrors_objectstorage_openio_user }}:{{ .cds.proj.drive_mirrors_objectstorage_openio_password }}@{{ .cds.proj.drive_mirrors_hostname }}"
+          make -f /external-packages/ubuntu/bionic/Makefile.common install-apt-repo
+          # dev or prod release
+          if [[ "{{ .git.tag }}" =~  ^[0-9]+\. ]]; then
+            export VERSION={{ .git.tag }}
+            export REPO_SUBREPO=main
+            export REPO_LIMIT=0
+          else
+            export VERSION=$(date +%Y%m%d%H%M).git{{ .git.hash.short }}
+            export REPO_SUBREPO=dev
+            export REPO_LIMIT=100
+          fi
+          export PACKAGE=gridinit
+
+          make -f /external-packages/ubuntu/bionic/Makefile.common deb_changelog
+          make -f /external-packages/ubuntu/bionic/Makefile.common
+          make -f /external-packages/ubuntu/bionic/Makefile.common upload_to_repo
+    requirements:
+      - model: openio-debbuild-18.04

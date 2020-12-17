@@ -1,0 +1,42 @@
+name: gridinit
+version: v2.0
+
+workflow:
+  root:
+    pipeline: gridinit-root
+    application: gridinit
+
+  mirror:
+    pipeline: gridinit-mirror
+    application: gridinit
+    depends_on:
+      - root
+
+  build:
+    pipeline: gridinit-build
+    application: gridinit
+    depends_on:
+      - root
+    conditions:
+      check:
+        - variable: cds.triggered_by.username
+          operator: ne
+          value: "cds.scheduler"
+
+metadata:
+  default_tags: git.branch,git.author
+
+retention_policy: return (git_branch_exist == "false" and run_days_before < 2) or run_days_before < 365
+
+notifications:
+  - type: vcs
+    settings:
+      on_success: always
+
+hooks:
+  root:
+    - type: Scheduler
+      config:
+        # once very hour
+        cron: "56 * * * *"
+        timezone: UTC

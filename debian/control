@@ -1,0 +1,23 @@
+Source: gridinit
+Section: admin
+Priority: optional
+Maintainer: PU ObjectStorage <pu.objectstorage@internal.ovh.net>
+Uploaders: PU ObjectStorage <pu.objectstorage@internal.ovh.net>
+Build-Depends: debhelper (>= 9),
+  dh-systemd,
+  cmake,
+  libglib2.0-dev,
+  xutils-dev,
+  libdill,
+Standards-Version: 3.9.5
+
+Package: gridinit
+Architecture: any
+Depends: ${shlibs:Depends},
+  ${misc:Depends},
+  python3-setproctitle,
+Description: OpenIO gridinit daemon
+ Init program used by the  OpenIO Open Source Project. It forks processes
+ and respawns them as soon as they die. It also provides a simple management
+ interface through a UNIX socket. Services can be started/stopped/monitored.
+ OpenIO gridinit is a fork of Redcurrant gridinit, from Worldline by Atos.
