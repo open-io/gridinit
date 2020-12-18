@@ -1,10 +1,10 @@
-version: v1.0
-name: mirror
+name: test_Script
 jobs:
 - job: Mirror to github
   steps:
   - checkout: '{{.cds.workspace}}'
-  - script:
+  - name: Mirror to github
+    script:
     - echo "HELLO"
   requirements:
   - binary: git
