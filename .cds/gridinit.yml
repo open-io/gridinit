@@ -12,16 +12,16 @@ workflow:
     depends_on:
       - root
 
-  build:
-    pipeline: gridinit-build
-    application: gridinit
-    depends_on:
-      - root
-    conditions:
-      check:
-        - variable: cds.triggered_by.username
-          operator: ne
-          value: "cds.scheduler"
+  # build:
+  #   pipeline: gridinit-build
+  #   application: gridinit
+  #   depends_on:
+  #     - root
+  #   conditions:
+  #     check:
+  #       - variable: cds.triggered_by.username
+  #         operator: ne
+  #         value: "cds.scheduler"
 
 metadata:
   default_tags: git.branch,git.author
