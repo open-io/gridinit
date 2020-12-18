@@ -1,19 +1,10 @@
 version: v1.0
-name: gridinit-mirror
+name: mirror
 jobs:
 - job: Mirror to github
   steps:
-  - name: Mirror to github
-    script:
-     # git clone directly in the script to prevent using checkout or gitclone action
-     # so we have full control on what we are doing
-    - checkout: '{{ .cds.workspace }}'
-    - script: git branch --all
-# cd {{ .cds.workspace }}
-# git fetch --all --prune
-# git branch --all
-
-# echo git push --mirror https://openiobot:{{ .cds.proj.OPENIOBOT_GITHUB_TOKEN }}@github.com/open-io/gridinit.git
-# -   echo git push --prune --force https://openiobot:{{ .cds.proj.OPENIOBOT_GITHUB_TOKEN }}@github.com/open-io/gridinit.git +refs/remotes/origin/*:refs/heads/* +refs/tags/*:refs/tags/*
+  - checkout: '{{.cds.workspace}}'
+  - script:
+    - echo "HELLO"
   requirements:
   - binary: git
