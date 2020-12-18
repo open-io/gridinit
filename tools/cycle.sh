@@ -4,7 +4,7 @@ set -x
 
 CMD="gridinit_cmd -S /tmp/gridinit/gridinit.sock"
 
-$CMD -f json status | jq
+$CMD status
 
 for G in @test-0 @test-1 '' '@test-0 @test-1' ; do
 	$CMD status $G
@@ -13,5 +13,5 @@ for G in @test-0 @test-1 '' '@test-0 @test-1' ; do
 	$CMD status $G
 done
 
-$CMD -f json status | jq
+$CMD status
 
