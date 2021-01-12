@@ -5,11 +5,12 @@ include(CheckIncludeFile)
 include(CheckLibraryExists)
 include(CheckTypeSize)
 
+# These variables cannot be set from CLI
 set(GridInit_VERSION_MAJOR 2)
 set(GridInit_VERSION_MINOR 2)
 set(GridInit_RELEASE 0)
-set(API_VERSION "${GridInit_VERSION_MAJOR}.${GridInit_VERSION_MINOR}.${GridInit_RELEASE}")
-set(SHORT_API_VERSION "${GridInit_VERSION_MAJOR}.${GridInit_VERSION_MINOR}")
+# This variable can be set from CLI: cmake -DAPI_VERSION=1.2.3 [...]
+set(API_VERSION "${GridInit_VERSION_MAJOR}.${GridInit_VERSION_MINOR}.${GridInit_RELEASE}" CACHE STRING "Gridinit full version number")
 
 add_definitions(-DAPI_VERSION="${API_VERSION}")
 add_definitions(-DSHORT_API_VERSION="${SHORT_API_VERSION}")
