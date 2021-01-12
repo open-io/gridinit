@@ -42,7 +42,8 @@ jobs:
           cat $0
           set -ex
           export CC=clang
-          cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_VERBOSE_MAKEFILE=TRUE -DCMAKE_INSTALL_PREFIX=/usr .
+          API_VERSION=$(git describe --tags)
+          cmake -DAPI_VERSION="$API_VERSION" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_VERBOSE_MAKEFILE=TRUE -DCMAKE_INSTALL_PREFIX=/usr .
           make -j 8
           make install
       - name: Test gridinit

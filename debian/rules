@@ -10,6 +10,7 @@ include /usr/share/dpkg/default.mk
 override_dh_auto_configure:
 	for i in debian/patches/*.patch; do patch -f -p1 < $$i; done
 	dh_auto_configure -- \
+	-DAPI_VERSION=$$VERSION \
 	-DPREFIX=/usr \
 	-DLD_LIBDIR=lib \
 	-DCMAKE_BUILD_TYPE=RelWithDebInfo \
