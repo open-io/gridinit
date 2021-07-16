@@ -26,7 +26,7 @@ workflow:
 metadata:
   default_tags: git.branch,git.author
 
-retention_policy: return (git_branch_exist == "false" and run_days_before < 2) or run_days_before < 365
+retention_policy: return (run_status == "Success" and run_days_before < 7) or (run_status ~= "Success" and run_days_before < 15)
 
 notifications:
   - type: vcs
@@ -37,6 +37,6 @@ hooks:
   root:
     - type: Scheduler
       config:
-        # once very hour
-        cron: "56 * * * *"
+        # once every week
+        cron: "56 0 * * 0"
         timezone: UTC
